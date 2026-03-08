@@ -184,7 +184,7 @@ export default function AuditLog() {
                           {format(new Date(entry.created_at), "yyyy-MM-dd HH:mm:ss")}
                         </TableCell>
                         <TableCell className="text-sm">
-                          {entry.profiles?.display_name || (entry.user_id ? entry.user_id.slice(0, 8) + "…" : "system")}
+                          {entry.user_id ? entry.user_id.slice(0, 8) + "…" : "system"}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className={cn("text-xs capitalize font-mono", ACTION_COLORS[entry.action] || "")}>
