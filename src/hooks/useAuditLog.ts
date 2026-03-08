@@ -22,7 +22,7 @@ export function useAuditLog() {
           _action: action,
           _resource_type: resourceType,
           _resource_id: resourceId ?? null,
-          _details: details ?? {},
+          _details: (details ?? {}) as unknown as Record<string, never>,
         });
       } catch (err) {
         // Audit logging should never block the user flow

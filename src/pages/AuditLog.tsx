@@ -52,7 +52,7 @@ export default function AuditLog() {
 
     let query = supabase
       .from("audit_logs")
-      .select("*, profiles(display_name)")
+      .select("*")
       .eq("workspace_id", currentWorkspace.id)
       .order("created_at", { ascending: false })
       .limit(200);
