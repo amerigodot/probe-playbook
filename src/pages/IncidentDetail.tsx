@@ -67,15 +67,7 @@ interface TimelineItem {
 }
 
 // ---------- Status flow ----------
-
-const STATUS_ORDER = ["open", "investigating", "mitigated", "closed"] as const;
-
-const STATUS_TRANSITIONS: Record<string, string[]> = {
-  open: ["investigating"],
-  investigating: ["mitigated", "open"],
-  mitigated: ["closed", "investigating"],
-  closed: ["open"],
-};
+import { STATUS_ORDER, STATUS_TRANSITIONS } from "@/lib/incident-status";
 
 // ---------- Component ----------
 
