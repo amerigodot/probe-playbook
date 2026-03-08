@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ interface Policy {
 
 export default function Policies() {
   const { currentWorkspace } = useWorkspace();
+  const { log: auditLog } = useAuditLog();
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", description: "", rule_config: '{\n  "type": "pii_detection",\n  "enabled": true\n}' });
@@ -47,14 +49,15 @@ export default function Policies() {
       toast.error("Invalid JSON in rule config");
       return;
     }
-    const { error } = await supabase.from("policies").insert({
+    const { data, error } = await supabase.from("policies").insert({
       workspace_id: currentWorkspace.id,
       name: form.name,
       description: form.description || null,
       rule_config: parsedConfig,
-    });
+    }).select("id").single();
     if (error) toast.error(error.message);
     else {
+      auditLog("create", "policy", data?.id, { name: form.name });
       toast.success("Policy created");
       setOpen(false);
       setForm({ name: "", description: "", rule_config: '{\n  "type": "pii_detection",\n  "enabled": true\n}' });

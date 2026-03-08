@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useWorkspace } from "@/contexts/WorkspaceContext";
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -43,6 +45,8 @@ export default function IncidentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { currentWorkspace } = useWorkspace();
+  const { log: auditLog } = useAuditLog();
   const [incident, setIncident] = useState<Incident | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [events, setEvents] = useState<LinkedEvent[]>([]);
@@ -78,9 +82,11 @@ export default function IncidentDetail() {
 
   const handleStatusChange = async (newStatus: string) => {
     if (!id) return;
+    const oldStatus = status;
     const { error } = await supabase.from("incidents").update({ status: newStatus as any }).eq("id", id);
     if (error) toast.error(error.message);
     else {
+      auditLog("transition", "incident", id, { from: oldStatus, to: newStatus });
       setStatus(newStatus);
       setIncident((prev) => prev ? { ...prev, status: newStatus } : null);
       toast.success("Status updated");
@@ -96,6 +102,7 @@ export default function IncidentDetail() {
     });
     if (error) toast.error(error.message);
     else {
+      auditLog("create", "incident", id, { comment: newComment.trim().slice(0, 100) });
       setNewComment("");
       const { data } = await supabase.from("incident_comments").select("*").eq("incident_id", id).order("created_at", { ascending: true });
       setComments((data as Comment[]) ?? []);

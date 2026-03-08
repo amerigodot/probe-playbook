@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -28,6 +29,7 @@ interface Incident {
 
 export default function Incidents() {
   const { currentWorkspace } = useWorkspace();
+  const { log: auditLog } = useAuditLog();
   const navigate = useNavigate();
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [severityFilter, setSeverityFilter] = useState("all");
@@ -54,14 +56,15 @@ export default function Incidents() {
 
   const handleCreate = async () => {
     if (!currentWorkspace || !form.title) return;
-    const { error } = await supabase.from("incidents").insert({
+    const { data, error } = await supabase.from("incidents").insert({
       workspace_id: currentWorkspace.id,
       title: form.title,
       description: form.description || null,
       severity: form.severity as any,
-    });
+    }).select("id").single();
     if (error) toast.error(error.message);
     else {
+      auditLog("create", "incident", data?.id, { title: form.title, severity: form.severity });
       toast.success("Incident created");
       setOpen(false);
       setForm({ title: "", description: "", severity: "medium" });
