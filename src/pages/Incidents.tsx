@@ -29,6 +29,7 @@ interface Incident {
 
 export default function Incidents() {
   const { currentWorkspace } = useWorkspace();
+  const { log: auditLog } = useAuditLog();
   const navigate = useNavigate();
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [severityFilter, setSeverityFilter] = useState("all");
