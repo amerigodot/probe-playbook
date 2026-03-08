@@ -17,6 +17,7 @@ import Events from "./pages/Events";
 import Incidents from "./pages/Incidents";
 import IncidentDetail from "./pages/IncidentDetail";
 import Policies from "./pages/Policies";
+import PolicyDetail from "./pages/PolicyDetail";
 import AuditLog from "./pages/AuditLog";
 import SettingsPage from "./pages/SettingsPage";
 import NotFound from "./pages/NotFound";
@@ -50,6 +51,7 @@ const App = () => (
               <Route path="/incidents" element={<Incidents />} />
               <Route path="/incidents/:id" element={<IncidentDetail />} />
               <Route path="/policies" element={<Policies />} />
+              <Route path="/policies/:id" element={<PolicyDetail />} />
               <Route path="/audit-log" element={<AuditLog />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
