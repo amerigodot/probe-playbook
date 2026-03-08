@@ -17,6 +17,7 @@ import Events from "./pages/Events";
 import Incidents from "./pages/Incidents";
 import IncidentDetail from "./pages/IncidentDetail";
 import Policies from "./pages/Policies";
+import PolicyDetail from "./pages/PolicyDetail";
 import AuditLog from "./pages/AuditLog";
 import SettingsPage from "./pages/SettingsPage";
 import NotFound from "./pages/NotFound";
