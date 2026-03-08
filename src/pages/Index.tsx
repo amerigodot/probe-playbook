@@ -61,8 +61,8 @@ export default function Index() {
         .order("created_at", { ascending: false })
         .limit(10);
 
-      if (severityFilter !== "all") query = query.eq("severity", severityFilter);
-      if (statusFilter !== "all") query = query.eq("status", statusFilter);
+      if (severityFilter !== "all") query = query.eq("severity", severityFilter as any);
+      if (statusFilter !== "all") query = query.eq("status", statusFilter as any);
 
       const { data } = await query;
       setIncidents((data as Incident[]) ?? []);

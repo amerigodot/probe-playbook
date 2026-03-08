@@ -38,7 +38,7 @@ export default function Events() {
         .order("created_at", { ascending: false })
         .limit(100);
 
-      if (severityFilter !== "all") query = query.eq("severity", severityFilter);
+      if (severityFilter !== "all") query = query.eq("severity", severityFilter as any);
       if (search) query = query.ilike("event_type", `%${search}%`);
 
       const { data } = await query;
