@@ -25,6 +25,7 @@ interface Agent {
 
 export default function Agents() {
   const { currentWorkspace } = useWorkspace();
+  const { log: auditLog } = useAuditLog();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", description: "", environment: "dev", owner_team: "" });
