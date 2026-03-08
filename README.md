@@ -261,6 +261,42 @@ Edge functions deploy automatically on push. Frontend deploys require clicking *
 
 ---
 
+## How to Demo in 3 Minutes
+
+> This script walks through both core journeys: UI incident lifecycle and API event ingestion.
+
+1. **Sign up** — Navigate to `/signup`. Enter a name, email, and password. After confirming your email (or with auto-confirm enabled), you'll land on the **Dashboard**.
+
+2. **Create an Agent** — Go to **Agents** → click **+ Add Agent**. Name it `Demo Bot`, set environment to `prod`, and click **Create Agent**. Note the agent appears in the table.
+
+3. **Create a Policy** — Go to **Policies** → click **+ Add Policy**. Name it `PII Guard`. Paste this rule config:
+   ```json
+   { "rules": [{ "type": "pii_detection", "params": { "categories": ["email", "ssn"] } }] }
+   ```
+   Click **Create Policy**.
+
+4. **Create an Incident** — Go to **Incidents** → click **+ Create Incident**. Title it `SSN Leak in Chat`, set severity to `High`, and click **Create**.
+
+5. **Walk the Incident Lifecycle** — Click into the incident. Use the status bar buttons to transition:
+   - **Open → Investigating**: Add comment "Starting investigation".
+   - **Investigating → Mitigated**: Add comment "Blocked PII in responses".
+   - **Mitigated → Closed**: Add comment "Deployed fix", enter root cause "Agent prompt missing PII filter". Observe the full timeline with status change entries.
+
+6. **Check Audit Log** — Go to **Audit Log**. Verify entries for `create` (agent, policy, incident) and `transition` (incident status changes) are recorded with timestamps.
+
+7. **Verify Dashboard** — Return to **Dashboard**. Confirm KPI cards show updated counts and the Recent Activity feed reflects your actions.
+
+**API ingestion demo** (optional, requires an API key in the `api_keys` table):
+```bash
+curl -X POST https://<project-url>/functions/v1/ingest-events \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: <your-key>" \
+  -d '{"agent_id":"<agent-uuid>","event_type":"chat_response","severity":"info","raw_details":{"response":"SSN: 123-45-6789"}}'
+```
+The response will include a `violations` array showing the PII detection hit.
+
+---
+
 ## Troubleshooting
 
 | Problem | Quick Fix |
