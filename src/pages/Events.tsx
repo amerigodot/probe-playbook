@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -23,6 +24,7 @@ interface Event {
 
 export default function Events() {
   const { currentWorkspace } = useWorkspace();
+  const { log: auditLog } = useAuditLog();
   const [events, setEvents] = useState<Event[]>([]);
   const [severityFilter, setSeverityFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -94,7 +96,7 @@ export default function Events() {
                 <TableRow
                   key={event.id}
                   className="border-border cursor-pointer hover:bg-muted/50"
-                  onClick={() => setSelectedEvent(event)}
+                  onClick={() => { setSelectedEvent(event); auditLog("read", "event", event.id, { view: "event_detail" }); }}
                 >
                   <TableCell className="font-mono text-xs text-muted-foreground">
                     {format(new Date(event.created_at), "MMM d, HH:mm:ss")}

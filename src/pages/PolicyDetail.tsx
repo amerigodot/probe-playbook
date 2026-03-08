@@ -94,6 +94,9 @@ export default function PolicyDetail() {
 
   useEffect(() => {
     fetchAll();
+    if (id) {
+      auditLog("read", "policy", id, { view: "policy_detail" });
+    }
   }, [id, currentWorkspace]);
 
   const handleSaveConfig = async () => {
