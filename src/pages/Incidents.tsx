@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -25,15 +26,18 @@ interface Incident {
   status: string;
   tags: string[];
   created_at: string;
+  assigned_to: string | null;
 }
 
 export default function Incidents() {
   const { currentWorkspace } = useWorkspace();
+  const { user } = useAuth();
   const { log: auditLog } = useAuditLog();
   const navigate = useNavigate();
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [severityFilter, setSeverityFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [assignedFilter, setAssignedFilter] = useState("all");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ title: "", description: "", severity: "medium" });
 
@@ -47,12 +51,14 @@ export default function Incidents() {
 
     if (severityFilter !== "all") query = query.eq("severity", severityFilter as any);
     if (statusFilter !== "all") query = query.eq("status", statusFilter as any);
+    if (assignedFilter === "me" && user) query = query.eq("assigned_to", user.id);
+    if (assignedFilter === "unassigned") query = query.is("assigned_to", null);
 
     const { data } = await query;
-    setIncidents((data as Incident[]) ?? []);
+    setIncidents((data as unknown as Incident[]) ?? []);
   };
 
-  useEffect(() => { fetchIncidents(); }, [currentWorkspace, severityFilter, statusFilter]);
+  useEffect(() => { fetchIncidents(); }, [currentWorkspace, severityFilter, statusFilter, assignedFilter]);
 
   const handleCreate = async () => {
     if (!currentWorkspace || !form.title) return;
@@ -131,6 +137,14 @@ export default function Incidents() {
             <SelectItem value="investigating">Investigating</SelectItem>
             <SelectItem value="mitigated">Mitigated</SelectItem>
             <SelectItem value="closed">Closed</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={assignedFilter} onValueChange={setAssignedFilter}>
+          <SelectTrigger className="w-40"><SelectValue placeholder="Assignment" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All assignments</SelectItem>
+            <SelectItem value="me">Assigned to me</SelectItem>
+            <SelectItem value="unassigned">Unassigned</SelectItem>
           </SelectContent>
         </Select>
       </div>
