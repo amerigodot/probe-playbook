@@ -21,7 +21,6 @@ interface AuditEntry {
   details: Record<string, unknown>;
   ip_address: string | null;
   created_at: string;
-  profiles?: { display_name: string | null } | null;
 }
 
 const ACTION_COLORS: Record<string, string> = {
