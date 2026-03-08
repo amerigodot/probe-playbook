@@ -135,6 +135,9 @@ export default function IncidentDetail() {
 
   useEffect(() => {
     fetchAll();
+    if (id) {
+      auditLog("read", "incident", id, { view: "incident_detail" });
+    }
   }, [id]);
 
   useEffect(() => {

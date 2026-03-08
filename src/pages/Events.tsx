@@ -24,6 +24,7 @@ interface Event {
 
 export default function Events() {
   const { currentWorkspace } = useWorkspace();
+  const { log: auditLog } = useAuditLog();
   const [events, setEvents] = useState<Event[]>([]);
   const [severityFilter, setSeverityFilter] = useState("all");
   const [search, setSearch] = useState("");
