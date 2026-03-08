@@ -96,7 +96,7 @@ export default function Events() {
                 <TableRow
                   key={event.id}
                   className="border-border cursor-pointer hover:bg-muted/50"
-                  onClick={() => setSelectedEvent(event)}
+                  onClick={() => { setSelectedEvent(event); auditLog("read", "event", event.id, { view: "event_detail" }); }}
                 >
                   <TableCell className="font-mono text-xs text-muted-foreground">
                     {format(new Date(event.created_at), "MMM d, HH:mm:ss")}
