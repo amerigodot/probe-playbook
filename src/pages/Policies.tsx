@@ -118,10 +118,10 @@ export default function Policies() {
               {policies.length === 0 ? (
                 <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-8">No policies defined</TableCell></TableRow>
               ) : policies.map((p) => (
-                <TableRow key={p.id} className="border-border">
+                <TableRow key={p.id} className="border-border cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/policies/${p.id}`)}>
                   <TableCell className="font-medium">{p.name}</TableCell>
                   <TableCell className="text-muted-foreground text-sm max-w-xs truncate">{p.description || "—"}</TableCell>
-                  <TableCell className="font-mono text-xs text-primary">{p.rule_config?.type || "custom"}</TableCell>
+                  <TableCell className="font-mono text-xs text-primary">{p.rule_config?.type || p.rule_config?.rules?.[0]?.type || "custom"}</TableCell>
                   <TableCell className="text-muted-foreground text-sm font-mono">{format(new Date(p.created_at), "MMM d, HH:mm")}</TableCell>
                 </TableRow>
               ))}
