@@ -102,6 +102,7 @@ export default function IncidentDetail() {
     });
     if (error) toast.error(error.message);
     else {
+      auditLog("create", "incident", id, { comment: newComment.trim().slice(0, 100) });
       setNewComment("");
       const { data } = await supabase.from("incident_comments").select("*").eq("incident_id", id).order("created_at", { ascending: true });
       setComments((data as Comment[]) ?? []);
