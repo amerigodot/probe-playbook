@@ -82,9 +82,11 @@ export default function IncidentDetail() {
 
   const handleStatusChange = async (newStatus: string) => {
     if (!id) return;
+    const oldStatus = status;
     const { error } = await supabase.from("incidents").update({ status: newStatus as any }).eq("id", id);
     if (error) toast.error(error.message);
     else {
+      auditLog("transition", "incident", id, { from: oldStatus, to: newStatus });
       setStatus(newStatus);
       setIncident((prev) => prev ? { ...prev, status: newStatus } : null);
       toast.success("Status updated");

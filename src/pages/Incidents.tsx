@@ -56,14 +56,15 @@ export default function Incidents() {
 
   const handleCreate = async () => {
     if (!currentWorkspace || !form.title) return;
-    const { error } = await supabase.from("incidents").insert({
+    const { data, error } = await supabase.from("incidents").insert({
       workspace_id: currentWorkspace.id,
       title: form.title,
       description: form.description || null,
       severity: form.severity as any,
-    });
+    }).select("id").single();
     if (error) toast.error(error.message);
     else {
+      auditLog("create", "incident", data?.id, { title: form.title, severity: form.severity });
       toast.success("Incident created");
       setOpen(false);
       setForm({ title: "", description: "", severity: "medium" });

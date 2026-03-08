@@ -44,15 +44,16 @@ export default function Agents() {
 
   const handleCreate = async () => {
     if (!currentWorkspace || !form.name) return;
-    const { error } = await supabase.from("agents").insert({
+    const { data, error } = await supabase.from("agents").insert({
       workspace_id: currentWorkspace.id,
       name: form.name,
       description: form.description || null,
       environment: form.environment as any,
       owner_team: form.owner_team || null,
-    });
+    }).select("id").single();
     if (error) toast.error(error.message);
     else {
+      auditLog("create", "agent", data?.id, { name: form.name, environment: form.environment });
       toast.success("Agent created");
       setOpen(false);
       setForm({ name: "", description: "", environment: "dev", owner_team: "" });
