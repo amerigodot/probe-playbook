@@ -23,6 +23,7 @@ interface Policy {
 
 export default function Policies() {
   const { currentWorkspace } = useWorkspace();
+  const { log: auditLog } = useAuditLog();
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", description: "", rule_config: '{\n  "type": "pii_detection",\n  "enabled": true\n}' });
