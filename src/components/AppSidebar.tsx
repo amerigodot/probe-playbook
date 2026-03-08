@@ -29,6 +29,7 @@ const navItems = [
   { title: "Events", url: "/events", icon: Activity },
   { title: "Incidents", url: "/incidents", icon: AlertTriangle },
   { title: "Policies", url: "/policies", icon: Shield },
+  { title: "Audit Log", url: "/audit-log", icon: ScrollText },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 
