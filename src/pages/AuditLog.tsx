@@ -66,7 +66,7 @@ export default function AuditLog() {
     }
 
     const { data } = await query;
-    setEntries((data as AuditEntry[] | null) ?? []);
+    setEntries((data as unknown as AuditEntry[] | null) ?? []);
     setLoading(false);
   };
 
