@@ -45,6 +45,8 @@ export default function IncidentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { currentWorkspace } = useWorkspace();
+  const { log: auditLog } = useAuditLog();
   const [incident, setIncident] = useState<Incident | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [events, setEvents] = useState<LinkedEvent[]>([]);
