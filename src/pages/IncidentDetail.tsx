@@ -7,12 +7,19 @@ import { useAuditLog } from "@/hooks/useAuditLog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SeverityBadge } from "@/components/SeverityBadge";
 import { StatusBadge } from "@/components/StatusBadge";
-import { ArrowLeft } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { ArrowLeft, MessageSquare, ArrowRight, Activity, User } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+
+// ---------- Types ----------
 
 interface Incident {
   id: string;
@@ -23,13 +30,17 @@ interface Incident {
   tags: string[];
   created_at: string;
   updated_at: string;
+  assigned_to: string | null;
+  root_cause: string | null;
+  resolved_at: string | null;
 }
 
-interface Comment {
+interface TimelineComment {
   id: string;
   content: string;
   created_at: string;
   user_id: string;
+  comment_type: string;
 }
 
 interface LinkedEvent {
@@ -41,56 +52,152 @@ interface LinkedEvent {
   raw_details: any;
 }
 
+interface WorkspaceMember {
+  user_id: string;
+  role: string;
+  profiles: { display_name: string | null } | null;
+}
+
+// Unified timeline item
+interface TimelineItem {
+  id: string;
+  type: "comment" | "status_change" | "event";
+  created_at: string;
+  data: any;
+}
+
+// ---------- Status flow ----------
+
+const STATUS_ORDER = ["open", "investigating", "mitigated", "closed"] as const;
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  open: ["investigating"],
+  investigating: ["mitigated", "open"],
+  mitigated: ["closed", "investigating"],
+  closed: ["open"],
+};
+
+// ---------- Component ----------
+
 export default function IncidentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
   const { currentWorkspace } = useWorkspace();
   const { log: auditLog } = useAuditLog();
+
   const [incident, setIncident] = useState<Incident | null>(null);
-  const [comments, setComments] = useState<Comment[]>([]);
+  const [comments, setComments] = useState<TimelineComment[]>([]);
   const [events, setEvents] = useState<LinkedEvent[]>([]);
+  const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [newComment, setNewComment] = useState("");
-  const [status, setStatus] = useState("");
 
-  useEffect(() => {
+  // Transition modal state
+  const [transitionTarget, setTransitionTarget] = useState<string | null>(null);
+  const [transitionComment, setTransitionComment] = useState("");
+  const [rootCauseInput, setRootCauseInput] = useState("");
+
+  // ---------- Data fetching ----------
+
+  const fetchAll = async () => {
     if (!id) return;
-    const fetch = async () => {
-      const { data: inc } = await supabase.from("incidents").select("*").eq("id", id).single();
-      if (inc) {
-        setIncident(inc as Incident);
-        setStatus(inc.status);
-      }
 
-      const { data: cmts } = await supabase
+    const [incRes, cmtRes, evtRes] = await Promise.all([
+      supabase.from("incidents").select("*").eq("id", id).single(),
+      supabase
         .from("incident_comments")
-        .select("*")
+        .select("id, content, created_at, user_id, comment_type")
         .eq("incident_id", id)
-        .order("created_at", { ascending: true });
-      setComments((cmts as Comment[]) ?? []);
-
-      const { data: linkedEvents } = await supabase
+        .order("created_at", { ascending: true }),
+      supabase
         .from("incident_events")
         .select("event_id, events(id, event_type, severity, payload_summary, created_at, raw_details)")
-        .eq("incident_id", id);
-      if (linkedEvents) {
-        setEvents(linkedEvents.map((le: any) => le.events).filter(Boolean));
-      }
-    };
-    fetch();
+        .eq("incident_id", id),
+    ]);
+
+    if (incRes.data) {
+      setIncident(incRes.data as unknown as Incident);
+    }
+    setComments((cmtRes.data as unknown as TimelineComment[]) ?? []);
+    if (evtRes.data) {
+      setEvents(evtRes.data.map((le: any) => le.events).filter(Boolean));
+    }
+  };
+
+  const fetchMembers = async () => {
+    if (!currentWorkspace) return;
+    const { data } = await supabase
+      .from("workspace_members")
+      .select("user_id, role, profiles(display_name)")
+      .eq("workspace_id", currentWorkspace.id);
+    setMembers((data as unknown as WorkspaceMember[]) ?? []);
+  };
+
+  useEffect(() => {
+    fetchAll();
   }, [id]);
 
-  const handleStatusChange = async (newStatus: string) => {
-    if (!id) return;
-    const oldStatus = status;
-    const { error } = await supabase.from("incidents").update({ status: newStatus as any }).eq("id", id);
-    if (error) toast.error(error.message);
-    else {
-      auditLog("transition", "incident", id, { from: oldStatus, to: newStatus });
-      setStatus(newStatus);
-      setIncident((prev) => prev ? { ...prev, status: newStatus } : null);
-      toast.success("Status updated");
+  useEffect(() => {
+    fetchMembers();
+  }, [currentWorkspace]);
+
+  // ---------- Actions ----------
+
+  const openTransitionModal = (targetStatus: string) => {
+    setTransitionTarget(targetStatus);
+    setTransitionComment("");
+    setRootCauseInput(incident?.root_cause || "");
+  };
+
+  const handleTransition = async () => {
+    if (!id || !transitionTarget || !transitionComment.trim()) {
+      toast.error("A comment is required when changing status");
+      return;
     }
+
+    if (transitionTarget === "closed" && !rootCauseInput.trim()) {
+      toast.error("Root cause is required when closing an incident");
+      return;
+    }
+
+    const oldStatus = incident?.status || "";
+    const updatePayload: Record<string, any> = { status: transitionTarget };
+    if (transitionTarget === "closed") {
+      updatePayload.root_cause = rootCauseInput.trim();
+      updatePayload.resolved_at = new Date().toISOString();
+    }
+    // Re-opening clears resolved_at
+    if (transitionTarget === "open") {
+      updatePayload.resolved_at = null;
+    }
+
+    const { error } = await supabase
+      .from("incidents")
+      .update(updatePayload as any)
+      .eq("id", id);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    // Insert status_change comment
+    await supabase.from("incident_comments").insert({
+      incident_id: id,
+      user_id: user!.id,
+      content: transitionComment.trim(),
+      comment_type: "status_change",
+    } as any);
+
+    auditLog("transition", "incident", id, {
+      from: oldStatus,
+      to: transitionTarget,
+      comment: transitionComment.trim().slice(0, 100),
+    });
+
+    toast.success(`Status changed to ${transitionTarget}`);
+    setTransitionTarget(null);
+    fetchAll();
   };
 
   const handleAddComment = async () => {
@@ -99,15 +206,64 @@ export default function IncidentDetail() {
       incident_id: id,
       user_id: user.id,
       content: newComment.trim(),
-    });
+      comment_type: "comment",
+    } as any);
     if (error) toast.error(error.message);
     else {
       auditLog("create", "incident", id, { comment: newComment.trim().slice(0, 100) });
       setNewComment("");
-      const { data } = await supabase.from("incident_comments").select("*").eq("incident_id", id).order("created_at", { ascending: true });
-      setComments((data as Comment[]) ?? []);
+      fetchAll();
     }
   };
+
+  const handleAssign = async (userId: string) => {
+    if (!id) return;
+    const assignValue = userId === "unassigned" ? null : userId;
+    const { error } = await supabase
+      .from("incidents")
+      .update({ assigned_to: assignValue } as any)
+      .eq("id", id);
+    if (error) toast.error(error.message);
+    else {
+      auditLog("update", "incident", id, { assigned_to: assignValue });
+      toast.success("Assignment updated");
+      fetchAll();
+    }
+  };
+
+  // ---------- Build unified timeline ----------
+
+  const buildTimeline = (): TimelineItem[] => {
+    const items: TimelineItem[] = [];
+
+    comments.forEach((c) => {
+      items.push({
+        id: c.id,
+        type: c.comment_type === "status_change" ? "status_change" : "comment",
+        created_at: c.created_at,
+        data: c,
+      });
+    });
+
+    events.forEach((e) => {
+      items.push({
+        id: e.id,
+        type: "event",
+        created_at: e.created_at,
+        data: e,
+      });
+    });
+
+    items.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    return items;
+  };
+
+  const getMemberName = (userId: string) => {
+    const m = members.find((m) => m.user_id === userId);
+    return m?.profiles?.display_name || userId.slice(0, 8) + "…";
+  };
+
+  // ---------- Render ----------
 
   if (!incident) {
     return (
@@ -117,89 +273,236 @@ export default function IncidentDetail() {
     );
   }
 
+  const allowedTransitions = STATUS_TRANSITIONS[incident.status] || [];
+  const timeline = buildTimeline();
+
   return (
     <div className="space-y-6">
       <Button variant="ghost" size="sm" onClick={() => navigate("/incidents")}>
         <ArrowLeft className="mr-2 h-4 w-4" />Back to Incidents
       </Button>
 
-      <div className="flex items-start justify-between">
-        <div>
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold tracking-tight">{incident.title}</h1>
-          <div className="flex gap-2 mt-2">
+          <div className="flex flex-wrap gap-2 mt-2">
             <SeverityBadge severity={incident.severity} />
             <StatusBadge status={incident.status} />
+            {incident.assigned_to && (
+              <Badge variant="outline" className="text-xs font-mono gap-1">
+                <User className="h-3 w-3" />
+                {getMemberName(incident.assigned_to)}
+              </Badge>
+            )}
           </div>
         </div>
-        <Select value={status} onValueChange={handleStatusChange}>
-          <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+
+        {/* Assign selector */}
+        <Select
+          value={incident.assigned_to || "unassigned"}
+          onValueChange={handleAssign}
+        >
+          <SelectTrigger className="w-44">
+            <SelectValue placeholder="Assign to…" />
+          </SelectTrigger>
           <SelectContent>
-            <SelectItem value="open">Open</SelectItem>
-            <SelectItem value="investigating">Investigating</SelectItem>
-            <SelectItem value="mitigated">Mitigated</SelectItem>
-            <SelectItem value="closed">Closed</SelectItem>
+            <SelectItem value="unassigned">Unassigned</SelectItem>
+            {members.map((m) => (
+              <SelectItem key={m.user_id} value={m.user_id}>
+                {m.profiles?.display_name || m.user_id.slice(0, 8)}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
 
-      {incident.description && (
-        <Card className="border-border bg-card">
-          <CardContent className="p-4">
-            <p className="text-sm text-muted-foreground">{incident.description}</p>
-          </CardContent>
-        </Card>
+      {/* Status transition bar */}
+      <Card className="border-border bg-card">
+        <CardContent className="p-4">
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground font-medium">Status:</span>
+            <div className="flex items-center gap-1">
+              {STATUS_ORDER.map((s, i) => {
+                const isCurrent = s === incident.status;
+                const isPast = STATUS_ORDER.indexOf(s) < STATUS_ORDER.indexOf(incident.status as any);
+                return (
+                  <div key={s} className="flex items-center gap-1">
+                    {i > 0 && (
+                      <ArrowRight className={cn("h-3 w-3", isPast || isCurrent ? "text-primary" : "text-muted-foreground/30")} />
+                    )}
+                    <span
+                      className={cn(
+                        "px-3 py-1 rounded-full text-xs font-mono capitalize transition-colors",
+                        isCurrent
+                          ? "bg-primary text-primary-foreground font-semibold"
+                          : isPast
+                          ? "bg-primary/20 text-primary"
+                          : "bg-muted text-muted-foreground"
+                      )}
+                    >
+                      {s}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="ml-auto flex gap-2">
+              {allowedTransitions.map((t) => (
+                <Button key={t} size="sm" variant="outline" onClick={() => openTransitionModal(t)}>
+                  Move to {t}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Description & root cause */}
+      {(incident.description || incident.root_cause) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {incident.description && (
+            <Card className="border-border bg-card">
+              <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Description</CardTitle></CardHeader>
+              <CardContent><p className="text-sm">{incident.description}</p></CardContent>
+            </Card>
+          )}
+          {incident.root_cause && (
+            <Card className="border-border bg-card">
+              <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Root Cause</CardTitle></CardHeader>
+              <CardContent><p className="text-sm">{incident.root_cause}</p></CardContent>
+            </Card>
+          )}
+        </div>
       )}
 
-      {/* Timeline: linked events */}
+      {/* Unified Timeline */}
       <Card className="border-border bg-card">
-        <CardHeader><CardTitle className="text-base">Event Timeline</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-base">Timeline</CardTitle>
+        </CardHeader>
         <CardContent>
-          {events.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No linked events</p>
+          {timeline.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No activity yet</p>
           ) : (
-            <div className="space-y-3">
-              {events.map((evt) => (
-                <div key={evt.id} className="flex gap-3 items-start border-l-2 border-border pl-4 py-2">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm">{evt.event_type}</span>
-                      <SeverityBadge severity={evt.severity} />
-                    </div>
-                    {evt.payload_summary && <p className="text-xs text-muted-foreground mt-1">{evt.payload_summary}</p>}
-                    <p className="text-xs text-muted-foreground font-mono mt-1">
-                      {format(new Date(evt.created_at), "yyyy-MM-dd HH:mm:ss")}
+            <div className="relative pl-6 space-y-0">
+              {/* Vertical line */}
+              <div className="absolute left-[11px] top-2 bottom-2 w-px bg-border" />
+
+              {timeline.map((item) => (
+                <div key={item.id} className="relative flex gap-3 pb-6 last:pb-0">
+                  {/* Dot */}
+                  <div
+                    className={cn(
+                      "absolute -left-6 top-1.5 h-[10px] w-[10px] rounded-full border-2",
+                      item.type === "status_change"
+                        ? "bg-severity-warning border-severity-warning"
+                        : item.type === "event"
+                        ? "bg-severity-info border-severity-info"
+                        : "bg-muted-foreground border-muted-foreground"
+                    )}
+                  />
+
+                  <div className="flex-1 min-w-0">
+                    {item.type === "status_change" && (
+                      <div className="rounded-lg border border-severity-warning/20 bg-severity-warning/5 p-3">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                          <ArrowRight className="h-3 w-3 text-severity-warning" />
+                          <span className="font-medium text-severity-warning">Status Change</span>
+                          <span>by {getMemberName(item.data.user_id)}</span>
+                        </div>
+                        <p className="text-sm">{item.data.content}</p>
+                      </div>
+                    )}
+
+                    {item.type === "comment" && (
+                      <div className="rounded-lg border border-border p-3">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                          <MessageSquare className="h-3 w-3" />
+                          <span>{getMemberName(item.data.user_id)}</span>
+                        </div>
+                        <p className="text-sm">{item.data.content}</p>
+                      </div>
+                    )}
+
+                    {item.type === "event" && (
+                      <div className="rounded-lg border border-severity-info/20 bg-severity-info/5 p-3">
+                        <div className="flex items-center gap-2">
+                          <Activity className="h-3 w-3 text-severity-info" />
+                          <span className="font-mono text-sm">{item.data.event_type}</span>
+                          <SeverityBadge severity={item.data.severity} />
+                        </div>
+                        {item.data.payload_summary && (
+                          <p className="text-xs text-muted-foreground mt-1">{item.data.payload_summary}</p>
+                        )}
+                      </div>
+                    )}
+
+                    <p className="text-[10px] text-muted-foreground font-mono mt-1">
+                      {format(new Date(item.created_at), "yyyy-MM-dd HH:mm:ss")}
                     </p>
                   </div>
                 </div>
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
 
-      {/* Comments */}
-      <Card className="border-border bg-card">
-        <CardHeader><CardTitle className="text-base">Comments</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          {comments.map((c) => (
-            <div key={c.id} className="border border-border rounded-lg p-3">
-              <p className="text-sm">{c.content}</p>
-              <p className="text-xs text-muted-foreground mt-1 font-mono">
-                {format(new Date(c.created_at), "MMM d, HH:mm")}
-              </p>
-            </div>
-          ))}
-          <div className="flex gap-2">
+          {/* Add comment */}
+          <div className="flex gap-2 mt-6 pt-4 border-t border-border">
             <Textarea
               value={newComment}
               onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Add a comment..."
+              placeholder="Add a comment…"
               className="min-h-[60px]"
             />
-            <Button onClick={handleAddComment} size="sm" className="self-end">Post</Button>
+            <Button onClick={handleAddComment} size="sm" className="self-end">
+              Post
+            </Button>
           </div>
         </CardContent>
       </Card>
+
+      {/* Transition Modal */}
+      <Dialog open={!!transitionTarget} onOpenChange={(open) => !open && setTransitionTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Move to <span className="capitalize text-primary">{transitionTarget}</span>
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Comment <span className="text-severity-critical">*</span></Label>
+              <Textarea
+                value={transitionComment}
+                onChange={(e) => setTransitionComment(e.target.value)}
+                placeholder="Explain why you're changing the status…"
+                className="min-h-[80px]"
+              />
+            </div>
+
+            {transitionTarget === "closed" && (
+              <div className="space-y-2">
+                <Label>Root Cause <span className="text-severity-critical">*</span></Label>
+                <Textarea
+                  value={rootCauseInput}
+                  onChange={(e) => setRootCauseInput(e.target.value)}
+                  placeholder="Describe the root cause of this incident…"
+                  className="min-h-[80px]"
+                />
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setTransitionTarget(null)}>Cancel</Button>
+            <Button onClick={handleTransition}>
+              Confirm Transition
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
