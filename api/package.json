@@ -1,0 +1,21 @@
+{
+  "name": "api",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@azure-rest/ai-content-safety": "^1.0.1",
+    "@azure/functions": "^4.11.2",
+    "@azure/openai": "^2.0.0",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "mssql": "^12.2.0",
+    "zod": "^4.3.6"
+  }
+}

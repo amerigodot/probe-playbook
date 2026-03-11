@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { SeverityBadge } from "@/components/SeverityBadge";
-import { ArrowLeft, Bot, Plus, X, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Bot, Plus, X, AlertTriangle, Sparkles } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
@@ -56,7 +56,9 @@ export default function PolicyDetail() {
   const [violations, setViolations] = useState<Violation[]>([]);
   const [availableAgents, setAvailableAgents] = useState<AvailableAgent[]>([]);
   const [ruleConfigText, setRuleConfigText] = useState("");
+  const [semanticRulesText, setSemanticRulesText] = useState("");
   const [editing, setEditing] = useState(false);
+  const [editingSemantic, setEditingSemantic] = useState(false);
   const [attachDialogOpen, setAttachDialogOpen] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState("");
 
@@ -86,6 +88,7 @@ export default function PolicyDetail() {
       const p = policyRes.data as unknown as Policy;
       setPolicy(p);
       setRuleConfigText(JSON.stringify(p.rule_config, null, 2));
+      setSemanticRulesText(p.rule_config?.semantic_rules || "");
     }
     setAttachedAgents((agentsRes.data as unknown as AttachedAgent[]) ?? []);
     setViolations((violationsRes.data as unknown as Violation[]) ?? []);
@@ -118,6 +121,28 @@ export default function PolicyDetail() {
       auditLog("update", "policy", id, { updated_fields: ["rule_config"] });
       toast.success("Rule config saved");
       setEditing(false);
+      fetchAll();
+    }
+  };
+
+  const handleSaveSemanticRules = async () => {
+    if (!id || !policy) return;
+    const newConfig = { 
+      ...(policy.rule_config || {}), 
+      semantic_rules: semanticRulesText 
+    };
+    
+    const { error } = await supabase
+      .from("policies")
+      .update({ rule_config: newConfig } as any)
+      .eq("id", id);
+    
+    if (error) {
+      toast.error(error.message);
+    } else {
+      auditLog("update", "policy", id, { updated_fields: ["semantic_rules"] });
+      toast.success("Semantic rules updated");
+      setEditingSemantic(false);
       fetchAll();
     }
   };
@@ -191,6 +216,48 @@ export default function PolicyDetail() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left column: Rule config */}
         <div className="lg:col-span-2 space-y-6">
+          <Card className="border-border bg-card">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                Semantic Rules (Natural Language)
+              </CardTitle>
+              {editingSemantic ? (
+                <div className="flex gap-2">
+                  <Button size="sm" variant="ghost" onClick={() => { setEditingSemantic(false); setSemanticRulesText(policy.rule_config?.semantic_rules || ""); }}>
+                    Cancel
+                  </Button>
+                  <Button size="sm" onClick={handleSaveSemanticRules}>Save</Button>
+                </div>
+              ) : (
+                <Button size="sm" variant="outline" onClick={() => setEditingSemantic(true)}>Edit</Button>
+              )}
+            </CardHeader>
+            <CardContent>
+              {editingSemantic ? (
+                <div className="space-y-2">
+                  <Textarea
+                    value={semanticRulesText}
+                    onChange={(e) => setSemanticRulesText(e.target.value)}
+                    placeholder="Describe governance rules in plain English (e.g., 'Agent must never mention competitor pricing' or 'Agent should remain professional and helpful')."
+                    className="min-h-[120px] bg-background"
+                  />
+                  <p className="text-[10px] text-muted-foreground italic">
+                    These rules are enforced by Azure OpenAI GPT-4o during event ingestion.
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-primary/10 bg-primary/5 p-4">
+                  {policy.rule_config?.semantic_rules ? (
+                    <p className="text-sm leading-relaxed">{policy.rule_config.semantic_rules}</p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic">No semantic rules defined. Click edit to add natural language policies.</p>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <Card className="border-border bg-card">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Rule Configuration</CardTitle>

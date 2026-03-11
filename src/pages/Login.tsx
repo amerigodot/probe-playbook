@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Zap } from "lucide-react";
+import { Zap, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
+import { Separator } from "@/components/ui/separator";
 
 export default function Login() {
-  const { user, signIn, loading } = useAuth();
+  const { user, signIn, signInWithAzure, loading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -21,8 +22,22 @@ export default function Login() {
     e.preventDefault();
     setSubmitting(true);
     const { error } = await signIn(email, password);
-    if (error) toast.error(error.message);
+    if (error) {
+      if (error.message === "Invalid login credentials") {
+        toast.error("Invalid email or password");
+      } else {
+        toast.error(error.message);
+      }
+    }
     setSubmitting(false);
+  };
+
+  const handleAzureLogin = async () => {
+    try {
+      await signInWithAzure();
+    } catch (error: any) {
+      toast.error(error.message || "Azure AD login failed");
+    }
   };
 
   return (
@@ -35,8 +50,23 @@ export default function Login() {
           <CardTitle className="text-2xl font-bold">Sign in to AgentOps</CardTitle>
           <CardDescription>Monitor and govern your AI agents</CardDescription>
         </CardHeader>
-        <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-4">
+        <CardContent className="space-y-4 pb-4">
+          <Button 
+            variant="outline" 
+            className="w-full flex items-center justify-center gap-2 border-primary/20 hover:bg-primary/5" 
+            onClick={handleAzureLogin}
+          >
+            <ShieldCheck className="h-4 w-4 text-blue-600" />
+            Sign in with Azure AD (Entra ID)
+          </Button>
+          
+          <div className="relative flex items-center py-2">
+            <Separator className="flex-grow" />
+            <span className="mx-2 text-xs text-muted-foreground uppercase">or</span>
+            <Separator className="flex-grow" />
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" required />
@@ -45,17 +75,17 @@ export default function Login() {
               <Label htmlFor="password">Password</Label>
               <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required />
             </div>
-          </CardContent>
-          <CardFooter className="flex flex-col gap-3">
             <Button type="submit" className="w-full" disabled={submitting}>
               {submitting ? "Signing in..." : "Sign in"}
             </Button>
-            <div className="flex justify-between w-full text-sm">
-              <Link to="/signup" className="text-primary hover:underline">Create account</Link>
-              <Link to="/forgot-password" className="text-muted-foreground hover:underline">Forgot password?</Link>
-            </div>
-          </CardFooter>
-        </form>
+          </form>
+        </CardContent>
+        <CardFooter className="flex flex-col gap-3 pt-0">
+          <div className="flex justify-between w-full text-sm">
+            <Link to="/signup" className="text-primary hover:underline">Create account</Link>
+            <Link to="/forgot-password" className="text-muted-foreground hover:underline">Forgot password?</Link>
+          </div>
+        </CardFooter>
       </Card>
     </div>
   );

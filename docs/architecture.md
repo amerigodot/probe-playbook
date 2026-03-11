@@ -16,72 +16,52 @@
 
 ---
 
-## System Diagram
+## System Diagram (Azure-Native)
 
-```
-External AI Agents
-       │
-       │  POST /functions/v1/ingest-events
-       │  (x-api-key header)
-       ▼
-┌──────────────────────────────────────────────────────┐
-│                 Edge Function Layer                    │
-│                                                       │
-│  ingest-events                                        │
-│  ├── Validate API key (SHA-256 hash → api_keys table) │
-│  ├── Verify agent belongs to workspace                │
-│  ├── Insert event record                              │
-│  ├── Load attached policies (agent_policies join)     │
-│  ├── Run policy rule checkers                         │
-│  ├── Insert violations (if any)                       │
-│  └── Write audit log entry                            │
-│                                                       │
-│  Auth: Service Role Key (bypasses RLS)                │
-└──────────────────┬───────────────────────────────────┘
-                   │
-                   ▼
-┌──────────────────────────────────────────────────────┐
-│              PostgreSQL (Supabase)                     │
-│                                                       │
-│  Core tables:                                         │
-│  workspaces ──< workspace_members >── auth.users      │
-│  agents ──< agent_policies >── policies               │
-│  events ──< incident_events >── incidents             │
-│  policy_violations                                    │
-│  incident_comments                                    │
-│  audit_logs                                           │
-│  api_keys                                             │
-│  profiles                                             │
-│  user_roles                                           │
-│                                                       │
-│  Security: RLS on every table                         │
-│  Functions: is_workspace_member(), get_workspace_role()│
-│             has_role(), validate_api_key(), log_audit()│
-└──────────────────┬───────────────────────────────────┘
-                   │
-                   │ Supabase JS Client (anon key + JWT)
-                   │ (RLS-enforced queries)
-                   ▼
-┌──────────────────────────────────────────────────────┐
-│                  Frontend (SPA)                       │
-│                                                       │
-│  React 18 + TypeScript + Vite                         │
-│  UI: Tailwind CSS + shadcn/ui + Radix primitives      │
-│  State: React Context (Auth, Workspace)               │
-│  Data: @tanstack/react-query + direct Supabase calls  │
-│  Routing: react-router-dom v6                         │
-│                                                       │
-│  Pages:                                               │
-│  ├── Dashboard (Index.tsx) — KPIs + recent activity   │
-│  ├── Agents — CRUD agent registry                     │
-│  ├── Events — Event log with detail panel             │
-│  ├── Policies — CRUD + detail (rule editor, agents)   │
-│  ├── Incidents — List + detail (lifecycle, timeline)  │
-│  ├── Audit Log — Filterable log viewer                │
-│  └── Settings — Workspace name, members               │
-│                                                       │
-│  Auth pages: Login, Signup, ForgotPassword, Reset      │
-└──────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "External AI Agents"
+        A[Microsoft Agent Framework Bot]
+        B[Custom AI Agent / MCP Server]
+    end
+
+    subgraph "Azure Logic & Ingestion"
+        C[Azure Function: ingest-events]
+        D[OpsSentinel: SRE Co-pilot Agent]
+    end
+
+    subgraph "Azure AI Services"
+        E[Azure AI Content Safety]
+        F[Azure OpenAI: GPT-4o]
+    end
+
+    subgraph "Data & Persistence"
+        G[Azure SQL Database + RLS]
+        H[Azure Monitor / App Insights]
+    end
+
+    subgraph "Governance Console (Frontend)"
+        I[Azure Static Web App]
+        J[Microsoft Entra ID Auth]
+    end
+
+    %% Ingestion Flow
+    A & B -->|Telemetry / Events| C
+    C -->|Identify / Classify| E
+    C -->|Semantic Check| F
+    C -->|Store Event & Violations| G
+    C -->|Audit Trace| H
+
+    %% OpsSentinel Flow
+    H -->|Observe Incidents| D
+    D -->|Reason over root cause| F
+    D -->|Remediate / Recommend| J
+    D -->|Open Issue / PR| GitHub[(GitHub)]
+
+    %% User Journey
+    J -->|Login| I
+    I -->|Query Telemetry| G
+    I -->|Inspect Incidents| G
 ```
 
 ---
