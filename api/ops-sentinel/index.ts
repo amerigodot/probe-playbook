@@ -226,16 +226,23 @@ const opsSentinel: AzureFunction = async function (context: Context, myTimer: an
                     WHERE id = @incId;
                 `);
             
-            // 6. Audit Trace
+            // 6. Audit Trace (Refined Governance Trail)
             await pool.request()
                 .input("wsId", sql.UniqueIdentifier, incident.workspace_id)
-                .input("action", sql.NVarChar, "transition")
-                .input("resourceType", sql.NVarChar, "incident")
-                .input("resourceId", sql.UniqueIdentifier, incident.id)
-                .input("details", sql.NVarChar, JSON.stringify({ agent: "OpsSentinel", result: analysis, pr_url: prUrl, quarantined: quarantineStatus }))
+                .input("actorId", sql.NVarChar, "system.ops-sentinel")
+                .input("actorType", sql.NVarChar, "system")
+                .input("action", sql.NVarChar, "remediation")
+                .input("decision", sql.NVarChar, quarantineStatus ? "quarantine" : "update")
+                .input("resType", sql.NVarChar, "incident")
+                .input("resId", sql.UniqueIdentifier, incident.id)
+                .input("evidence", sql.NVarChar, JSON.stringify({ 
+                    analysis: analysis, 
+                    pr_url: prUrl, 
+                    quarantined: quarantineStatus 
+                }))
                 .query(`
-                    INSERT INTO audit_logs (workspace_id, action, resource_type, resource_id, details)
-                    VALUES (@wsId, @action, @resourceType, @resourceId, @details)
+                    INSERT INTO audit_logs (workspace_id, actor_id, actor_type, action, decision, resource_type, resource_id, evidence)
+                    VALUES (@wsId, @actorId, @actorType, @action, @decision, @resType, @resId, @evidence)
                 `);
         }
 

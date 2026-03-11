@@ -204,16 +204,22 @@ const ingestEvents: AzureFunction = async function (context: Context, req: HttpR
             }
         }
 
-        // 5. Audit Log
+        // 5. Audit Log (Refined Governance Trail)
         await pool.request()
             .input("wsId", sql.UniqueIdentifier, workspaceId)
+            .input("actorId", sql.NVarChar, agent_id) // Agent is the actor during ingestion
+            .input("actorType", sql.NVarChar, "agent")
             .input("action", sql.NVarChar, "ingest")
-            .input("resourceType", sql.NVarChar, "event")
-            .input("resourceId", sql.UniqueIdentifier, eventId)
-            .input("details", sql.NVarChar, JSON.stringify({ agent_id, violations_count: violations.length }))
+            .input("decision", sql.NVarChar, violations.length > 0 ? "flag" : "allow")
+            .input("resType", sql.NVarChar, "event")
+            .input("resId", sql.UniqueIdentifier, eventId)
+            .input("evidence", sql.NVarChar, JSON.stringify({ 
+                violations_count: violations.length,
+                safety_summary: analyzeTextResponse.body.categoriesAnalysis
+            }))
             .query(`
-                INSERT INTO audit_logs (workspace_id, action, resource_type, resource_id, details)
-                VALUES (@wsId, @action, @resourceType, @resourceId, @details)
+                INSERT INTO audit_logs (workspace_id, actor_id, actor_type, action, decision, resource_type, resource_id, evidence)
+                VALUES (@wsId, @actorId, @actorType, @action, @decision, @resType, @resId, @evidence)
             `);
 
         context.res = {

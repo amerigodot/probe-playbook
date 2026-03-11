@@ -60,15 +60,26 @@ CREATE TABLE policy_violations (
     created_at DATETIMEOFFSET DEFAULT SYSDATETIMEOFFSET()
 );
 
--- 6. Create Audit Logs Table
+-- 6. Create Governance Audit Trail Table
+-- This schema ensures every action has a tenant, an actor, a policy context, and a clear decision.
 CREATE TABLE audit_logs (
     id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
     workspace_id UNIQUEIDENTIFIER NOT NULL REFERENCES workspaces(id),
-    user_id NVARCHAR(255), -- Entra ID Object ID
-    action NVARCHAR(255) NOT NULL,
+    
+    -- Actor Details
+    actor_id NVARCHAR(255) NOT NULL, -- Entra ID OID or 'system.ops-sentinel'
+    actor_type NVARCHAR(50) NOT NULL CHECK (actor_type IN ('user', 'system', 'agent')),
+    
+    -- Governance Context
+    policy_id UNIQUEIDENTIFIER NULL REFERENCES policies(id),
+    action NVARCHAR(255) NOT NULL, -- e.g., 'ingest', 'policy_update', 'remediation'
+    decision NVARCHAR(50) NOT NULL CHECK (decision IN ('allow', 'flag', 'block', 'quarantine', 'update', 'none')),
+    
+    -- Evidence & Metadata
     resource_type NVARCHAR(255) NOT NULL,
-    resource_id UNIQUEIDENTIFIER,
-    details NVARCHAR(MAX), -- JSON string
+    resource_id UNIQUEIDENTIFIER NULL,
+    evidence NVARCHAR(MAX), -- JSON blob containing CoVe results, safety scores, etc.
+    
     ip_address NVARCHAR(50),
     created_at DATETIMEOFFSET DEFAULT SYSDATETIMEOFFSET()
 );
