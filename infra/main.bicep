@@ -31,6 +31,7 @@ var appInsightsName = '${projectName}-insights-${uniqueSuffix}'
 var logAnalyticsWorkspaceName = '${projectName}-law-${uniqueSuffix}'
 var openAiName = '${projectName}-openai-${uniqueSuffix}'
 var contentSafetyName = '${projectName}-safety-${uniqueSuffix}'
+var keyVaultName = '${projectName}-kv-${uniqueSuffix}'
 
 // --- Log Analytics Workspace ---
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2021-06-01' = {
@@ -110,6 +111,38 @@ resource contentSafety 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
   }
 }
 
+// --- Key Vault ---
+resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
+  name: keyVaultName
+  location: location
+  properties: {
+    sku: {
+      family: 'A'
+      name: 'standard'
+    }
+    tenantId: subscription().tenantId
+    enableRbacAuthorization: true
+    publicNetworkAccess: 'Enabled'
+  }
+}
+
+// Secrets
+resource sqlSecret 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
+  parent: keyVault
+  name: 'sqlConnectionString'
+  properties: {
+    value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Initial Catalog=${sqlDatabase.name};Persist Security Info=False;User ID=${sqlAdminLogin};Password=${sqlAdminPassword};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
+  }
+}
+
+resource openAiSecret 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
+  parent: keyVault
+  name: 'openaiKey'
+  properties: {
+    value: openAi.listKeys().key1
+  }
+}
+
 // --- Azure SQL ---
 resource sqlServer 'Microsoft.Sql/servers@2022-05-01-preview' = {
   name: sqlServerName
@@ -158,8 +191,11 @@ resource functionApp 'Microsoft.Web/sites@2022-03-01' = {
   name: functionAppName
   location: location
   kind: 'functionapp'
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
-    serverFarmId: null // Flex consumption handles this internally or via a specific plan
+    serverFarmId: null
     siteConfig: {
       appSettings: [
         {
@@ -180,25 +216,28 @@ resource functionApp 'Microsoft.Web/sites@2022-03-01' = {
         }
         {
           name: 'AZURE_OPENAI_KEY'
-          value: openAi.listKeys().key1
-        }
-        {
-          name: 'AZURE_CONTENT_SAFETY_ENDPOINT'
-          value: contentSafety.properties.endpoint
-        }
-        {
-          name: 'AZURE_CONTENT_SAFETY_KEY'
-          value: contentSafety.listKeys().key1
+          value: '@Microsoft.KeyVault(SecretUri=${openAiSecret.properties.secretUri})'
         }
         {
           name: 'SQL_CONNECTION_STRING'
-          value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Initial Catalog=${sqlDatabase.name};Persist Security Info=False;User ID=${sqlAdminLogin};Password=${sqlAdminPassword};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
+          value: '@Microsoft.KeyVault(SecretUri=${sqlSecret.properties.secretUri})'
         }
       ]
       ftpsState: 'FtpsOnly'
       minTlsVersion: '1.2'
     }
     httpsOnly: true
+  }
+}
+
+// Grant Function App access to Key Vault
+resource kvRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(keyVault.id, functionApp.id, 'KeyVaultSecretUser')
+  scope: keyVault
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6') // Key Vault Secrets User
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 

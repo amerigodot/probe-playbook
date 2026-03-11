@@ -13,6 +13,52 @@ const sqlConfig = process.env.SQL_CONNECTION_STRING || "";
 const contentSafetyClient = ContentSafetyClient(endpoint, new AzureKeyCredential(key));
 const openaiClient = new OpenAIClient(openaiEndpoint, new AzureKeyCredential(openaiKey));
 
+/**
+ * Helper to perform Chain-of-Verification (CoVe) for hallucination detection
+ */
+async function performHallucinationCheck(context: Context, agentOutput: string, groundingContext: string): Promise<{ violation: boolean, reason: string }> {
+    try {
+        // Step 1: Extract Factual Claims
+        const extractPrompt = `Extract all independent factual claims from the following agent output. 
+        Output as a JSON array of strings.
+        Output: "${agentOutput}"`;
+
+        const extractRes = await openaiClient.getChatCompletions("gpt-4o", [
+            { role: "system", content: "You are a factual claim extractor." },
+            { role: "user", content: extractPrompt }
+        ]);
+        const claims: string[] = JSON.parse(extractRes.choices[0].message?.content || "[]");
+
+        if (claims.length === 0) return { violation: false, reason: "No factual claims found." };
+
+        // Step 2: Verify Claims against Context
+        const verifyPrompt = `Verify the following claims against the provided grounding context. 
+        Identify any claims that are NOT supported or are contradicted by the context.
+        Grounding Context: "${groundingContext}"
+        Claims: ${JSON.stringify(claims)}
+        
+        Respond in JSON: {"contradictions": [{"claim": "string", "reason": "string"}]}`;
+
+        const verifyRes = await openaiClient.getChatCompletions("gpt-4o", [
+            { role: "system", content: "You are a factual verification assistant." },
+            { role: "user", content: verifyPrompt }
+        ]);
+        const verification = JSON.parse(verifyRes.choices[0].message?.content || "{}");
+
+        if (verification.contradictions && verification.contradictions.length > 0) {
+            return {
+                violation: true,
+                reason: `Hallucination detected in ${verification.contradictions.length} claims: ${verification.contradictions.map((c: any) => c.claim).join("; ")}`
+            };
+        }
+
+        return { violation: false, reason: "All claims verified." };
+    } catch (e) {
+        context.log.error("Hallucination check failed:", e);
+        return { violation: false, reason: "Check failed due to error." };
+    }
+}
+
 const ingestEvents: AzureFunction = async function (context: Context, req: HttpRequest): Promise<void> {
     context.log("Processing ingest-events request...");
 
@@ -85,6 +131,8 @@ const ingestEvents: AzureFunction = async function (context: Context, req: HttpR
 
         for (const policy of policiesResult.recordset) {
             const ruleConfig = JSON.parse(policy.rule_config);
+            
+            // --- Semantic Rules ---
             if (ruleConfig.semantic_rules) {
                 const prompt = `Evaluate the following agent event against this semantic policy: "${ruleConfig.semantic_rules}". 
                 Event Payload: ${JSON.stringify(raw_details)}. 
@@ -102,6 +150,22 @@ const ingestEvents: AzureFunction = async function (context: Context, req: HttpR
                         policy_name: policy.name,
                         type: "semantic_compliance",
                         message: analysis.reason
+                    });
+                }
+            }
+
+            // --- Hallucination Check ---
+            if (ruleConfig.hallucination_check) {
+                const agentOutput = raw_details.output || raw_details.response || payload_summary || "";
+                const groundingContext = ruleConfig.grounding_context || "No context provided."; // Default or extracted from DB
+                
+                const result = await performHallucinationCheck(context, agentOutput, groundingContext);
+                if (result.violation) {
+                    violations.push({
+                        policy_id: policy.id,
+                        policy_name: policy.name,
+                        type: "hallucination_detection",
+                        message: result.reason
                     });
                 }
             }

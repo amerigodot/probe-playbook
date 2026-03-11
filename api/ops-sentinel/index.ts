@@ -1,13 +1,140 @@
 import { AzureFunction, Context } from "@azure/functions";
 import { AzureKeyCredential } from "@azure/core-auth";
 import { OpenAIClient } from "@azure/openai";
+import { Octokit } from "@octokit/rest";
+import { MachineLearningManagementClient } from "@azure/arm-machinelearning";
+import { DefaultAzureCredential } from "@azure/identity";
 import * as sql from "mssql";
 
 const openaiEndpoint = process.env.AZURE_OPENAI_ENDPOINT || "";
 const openaiKey = process.env.AZURE_OPENAI_KEY || "";
 const sqlConfig = process.env.SQL_CONNECTION_STRING || "";
+const githubToken = process.env.GITHUB_TOKEN || "";
+const githubRepoOwner = process.env.GITHUB_REPO_OWNER || "";
+const githubRepoName = process.env.GITHUB_REPO_NAME || "";
+
+// Azure ML variables for Quarantine feature
+const subscriptionId = process.env.AZURE_SUBSCRIPTION_ID || "";
+const resourceGroupName = process.env.AZURE_RESOURCE_GROUP || "";
+const workspaceName = process.env.AZURE_ML_WORKSPACE || "";
 
 const openaiClient = new OpenAIClient(openaiEndpoint, new AzureKeyCredential(openaiKey));
+const octokit = new Octokit({ auth: githubToken });
+
+/**
+ * Helper to disable an Azure AI Foundry deployment (Quarantine)
+ */
+async function quarantineDeployment(context: Context, deploymentName: string, endpointName: string): Promise<boolean> {
+    if (!subscriptionId || !resourceGroupName || !workspaceName) {
+        context.log.warn("Azure ML config missing. Skipping quarantine.");
+        return false;
+    }
+
+    try {
+        const credential = new DefaultAzureCredential();
+        const client = new MachineLearningManagementClient(credential, subscriptionId);
+
+        context.log(`Quarantining deployment ${deploymentName} on endpoint ${endpointName}...`);
+        
+        // 1. Get current endpoint to verify
+        const endpoint = await client.onlineEndpoints.get(resourceGroupName, workspaceName, endpointName);
+        
+        // 2. Update traffic to route 0% to the violating deployment
+        const trafficUpdate = { ...endpoint.traffic };
+        if (trafficUpdate && trafficUpdate[deploymentName] !== undefined) {
+             trafficUpdate[deploymentName] = 0;
+        }
+
+        await client.onlineEndpoints.beginUpdateAndWait(resourceGroupName, workspaceName, endpointName, {
+            traffic: trafficUpdate
+        });
+
+        context.log(`Quarantine successful for ${deploymentName}.`);
+        return true;
+    } catch (error) {
+        context.log.error("Failed to quarantine deployment:", error);
+        return false;
+    }
+}
+
+/**
+ * Helper to create a GitHub PR with the suggested patch
+ */
+async function createRemediationPR(context: Context, incidentId: string, suggestedPatch: string, fileToPatch: string = "agent-prompts.json") {
+    try {
+        if (!githubToken || !githubRepoOwner || !githubRepoName) {
+            context.log.warn("GitHub integration missing configuration. Skipping PR creation.");
+            return null;
+        }
+
+        const branchName = `ops-sentinel/fix-${incidentId.substring(0, 8)}`;
+        
+        // 1. Get the latest commit SHA of the main branch
+        const { data: refData } = await octokit.git.getRef({
+            owner: githubRepoOwner,
+            repo: githubRepoName,
+            ref: "heads/main",
+        });
+        const baseSha = refData.object.sha;
+
+        // 2. Create a new branch
+        await octokit.git.createRef({
+            owner: githubRepoOwner,
+            repo: githubRepoName,
+            ref: `refs/heads/${branchName}`,
+            sha: baseSha,
+        });
+
+        // 3. Get the current file content (Simulating a known prompt file)
+        let currentContent = "";
+        let fileSha = "";
+        try {
+            const { data: fileData } = await octokit.repos.getContent({
+                owner: githubRepoOwner,
+                repo: githubRepoName,
+                path: fileToPatch,
+                ref: branchName,
+            });
+            if (!Array.isArray(fileData) && fileData.type === 'file') {
+                currentContent = Buffer.from(fileData.content, 'base64').toString('utf-8');
+                fileSha = fileData.sha;
+            }
+        } catch (e) {
+            context.log("Target file does not exist, creating new one.");
+        }
+
+        // 4. Update the file (For demo, we append the patch or replace if JSON)
+        const newContent = currentContent 
+            ? `${currentContent}\n\n// OpsSentinel Patch applied:\n${suggestedPatch}`
+            : suggestedPatch;
+
+        await octokit.repos.createOrUpdateFileContents({
+            owner: githubRepoOwner,
+            repo: githubRepoName,
+            path: fileToPatch,
+            message: `OpsSentinel: Automated remediation for incident ${incidentId}`,
+            content: Buffer.from(newContent).toString('base64'),
+            sha: fileSha || undefined,
+            branch: branchName,
+        });
+
+        // 5. Create Pull Request
+        const { data: prData } = await octokit.pulls.create({
+            owner: githubRepoOwner,
+            repo: githubRepoName,
+            title: `[OpsSentinel] Automated Remediation for Incident ${incidentId}`,
+            head: branchName,
+            base: "main",
+            body: `🤖 **OpsSentinel Automated Remediation**\n\nThis PR was generated automatically to resolve policy violations associated with Incident \`${incidentId}\`.\n\n**Suggested Patch:**\n\`\`\`\n${suggestedPatch}\n\`\`\`\n\nPlease review the changes before merging.`,
+        });
+
+        return prData.html_url;
+
+    } catch (error) {
+        context.log.error("Failed to create GitHub PR:", error);
+        return null;
+    }
+}
 
 /**
  * OpsSentinel: SRE Co-pilot Agent
@@ -44,14 +171,18 @@ const opsSentinel: AzureFunction = async function (context: Context, myTimer: an
             Task:
             1. Reason about the root cause.
             2. Propose a specific remediation (e.g., a prompt engineering fix or a system message update).
-            3. Decide if a GitHub Issue should be opened.
+            3. Decide if a GitHub Issue or PR should be opened.
+            4. Decide if the agent's behavior is dangerous enough to warrant an immediate "Quarantine" (disabling its Azure AI deployment).
 
             Respond in JSON format: 
             {
                 "root_cause": "string",
                 "remediation_plan": "string",
                 "open_github_issue": boolean,
-                "suggested_patch": "string"
+                "suggested_patch": "string",
+                "requires_quarantine": boolean,
+                "deployment_name": "string", 
+                "endpoint_name": "string"
             }`;
 
             const completion = await openaiClient.getChatCompletions("gpt-4o", [
@@ -60,12 +191,31 @@ const opsSentinel: AzureFunction = async function (context: Context, myTimer: an
             ]);
 
             const analysis = JSON.parse(completion.choices[0].message?.content || "{}");
+            
+            let prUrl = null;
+            let quarantineStatus = false;
 
-            // 3. Action: Update incident and log findings
+            // 3. Action: Quarantine if critical
+            if (analysis.requires_quarantine && analysis.deployment_name && analysis.endpoint_name) {
+                context.log(`[ACTION] Initiating Quarantine for incident ${incident.id}`);
+                quarantineStatus = await quarantineDeployment(context, analysis.deployment_name, analysis.endpoint_name);
+            }
+
+            // 4. Action: Open GitHub PR
+            if (analysis.open_github_issue && analysis.suggested_patch) {
+                context.log(`[ACTION] Initiating GitHub PR for ${incident.id}`);
+                prUrl = await createRemediationPR(context, incident.id, analysis.suggested_patch);
+            }
+
+            // 5. Update incident and log findings
+            let finalComment = `OpsSentinel Investigation Result: ${analysis.root_cause}. Recommended fix: ${analysis.remediation_plan}.`;
+            if (prUrl) finalComment += ` Created PR for remediation: ${prUrl}.`;
+            if (quarantineStatus) finalComment += ` ⚠️ AGENT QUARANTINED due to critical safety violation.`;
+
             await pool.request()
                 .input("incId", sql.UniqueIdentifier, incident.id)
                 .input("wsId", sql.UniqueIdentifier, incident.workspace_id)
-                .input("comment", sql.NVarChar, `OpsSentinel Investigation Result: ${analysis.root_cause}. Recommended fix: ${analysis.remediation_plan}`)
+                .input("comment", sql.NVarChar, finalComment)
                 .query(`
                     INSERT INTO incident_comments (incident_id, workspace_id, user_id, comment, is_system_generated)
                     VALUES (@incId, @wsId, NULL, @comment, 1);
@@ -75,20 +225,14 @@ const opsSentinel: AzureFunction = async function (context: Context, myTimer: an
                         updated_at = SYSDATETIMEOFFSET()
                     WHERE id = @incId;
                 `);
-
-            // 4. Action: (Simulated) Open GitHub Issue or push fix
-            if (analysis.open_github_issue) {
-                context.log(`[ACTION] Opening GitHub Issue for ${incident.id}: ${analysis.remediation_plan}`);
-                // In a real implementation, we'd use the GitHub API here
-            }
             
-            // 5. Audit Trace
+            // 6. Audit Trace
             await pool.request()
                 .input("wsId", sql.UniqueIdentifier, incident.workspace_id)
                 .input("action", sql.NVarChar, "transition")
                 .input("resourceType", sql.NVarChar, "incident")
                 .input("resourceId", sql.UniqueIdentifier, incident.id)
-                .input("details", sql.NVarChar, JSON.stringify({ agent: "OpsSentinel", result: analysis }))
+                .input("details", sql.NVarChar, JSON.stringify({ agent: "OpsSentinel", result: analysis, pr_url: prUrl, quarantined: quarantineStatus }))
                 .query(`
                     INSERT INTO audit_logs (workspace_id, action, resource_type, resource_id, details)
                     VALUES (@wsId, @action, @resourceType, @resourceId, @details)
