@@ -35,6 +35,33 @@ The rise of autonomous AI agents (chatbots, copilots, autonomous tools) has crea
 
 ---
 
+## 🎬 Demo Script: From Violation to Remediation
+
+Follow this 3-step narrative to experience the full power of AgentOps Agentic DevOps.
+
+### 1. Cause an Incident
+Run the hallucination simulation tool to trigger a semantic policy violation. This simulates a production agent providing inaccurate information contradicted by its grounding context.
+```bash
+npx ts-node tools/test-hallucination.ts
+```
+*   **Console Observation:** A new **"Critical"** incident appears on the Dashboard within seconds.
+*   **Audit Observation:** The `ingest-events` log shows the **CoVe (Chain-of-Verification)** loop detecting the factual contradiction.
+
+### 2. OpsSentinel Reasons
+Wait for the **OpsSentinel** background loop to trigger (or run the trigger tool).
+```bash
+npx ts-node tools/trigger-ops-sentinel.ts
+```
+*   **Console Observation:** Navigate to the Incident Detail page. You will see a **System Generated Comment** from OpsSentinel.
+*   **The Reasoning:** *"OpsSentinel Investigation Result: The agent is hallucinating factual claims about geographic data. Root Cause: System prompt lacks strict groundedness constraints."*
+
+### 3. Autonomous Action
+Observe the automated remediation steps taken by the co-pilot.
+*   **GitHub Action:** Check your configured GitHub repository. A **New Pull Request** has been opened with a suggested prompt engineering patch to fix the hallucination.
+*   **Quarantine (Optional):** If the violation was flagged as a safety risk, the **Azure AI Foundry** deployment traffic is automatically set to 0%, preventing further user exposure.
+
+---
+
 ## 🛠️ Architecture
 
 AgentOps is built to mirror Microsoft's enterprise guidance for AI governance at scale:
