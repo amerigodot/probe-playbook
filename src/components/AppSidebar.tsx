@@ -30,6 +30,7 @@ const navItems = [
   { title: "Incidents", url: "/incidents", icon: AlertTriangle },
   { title: "Policies", url: "/policies", icon: Shield },
   { title: "Audit Log", url: "/audit-log", icon: ScrollText },
+  { title: "Playground", url: "/playground", icon: Zap },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 

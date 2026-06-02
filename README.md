@@ -1,109 +1,80 @@
-# AgentOps — Azure-Native Governance & Agentic DevOps Control Plane
+# AgentOps — Standalone AI Inference Gateway & Aigement Steering Control Plane
 
-> **"Your Entra-secured control plane for autonomous AI agents."**
+> **"Your local-first, Vercel-ready control plane for autonomous AI agents and stateful enunciation steering."**
 
-Monitor, govern, and auto-remediate policy violations across your AI agent fleet. AgentOps is an enterprise-grade solution built natively on the **Microsoft Azure AI Platform** to provide real-time auditing, semantic policy enforcement, and autonomous incident response.
-
----
-
-## 🔎 For Judges: AI Dev Days Hackathon
-
-This project is a 100% Azure-native pivot of a governance console, specifically engineered for the **"Best Enterprise Solution"** and **"Agentic DevOps"** tracks.
-
-| Judging Axis | How We Address It | Artifacts |
-| :--- | :--- | :--- |
-| **Technological Implementation** | Native Azure Stack: SWA, Functions, Azure SQL, Entra ID, Content Safety, OpenAI. | [Bicep Template](infra/main.bicep) |
-| **Agentic Design & Innovation** | **OpsSentinel**: An autonomous SRE co-pilot that reasons over incidents and auto-mitigates them. | [Agentic DevOps Guide](docs/agentic-devops.md) |
-| **Enterprise Readiness** | **Entra ID Auth** + **Azure SQL RLS** for tenant isolation & auditable governance. | [Security Model](docs/security-model.md) |
-| **Responsible AI** | Real-time moderation via **AI Content Safety** & semantic compliance via **GPT-4o**. | [RAI Report](docs/rai-governance.md) |
-| **Overall Impact** | 85% reduction in MTTR and 95% automated compliance coverage for AI fleets. | [Impact Statement](docs/impact-statement.md) |
-
-👉 **[View the full JUDGING.md mapping](./JUDGING.md)**
+AgentOps is an enterprise-grade standalone AI inference gateway and governance layer. It intercepts model requests, enforces semantic compliance, and dynamically steers conversations ("aigement") based on the warning history of individual sessions. 
 
 ---
 
-## 🚀 Why AgentOps?
+## 🚀 Key Features
 
-The rise of autonomous AI agents (chatbots, copilots, autonomous tools) has created a **governance vacuum**. Hallucinations, policy drift, and PII leaks in production agents carry massive compliance and reputational risks.
-
-**AgentOps** bridges this gap by providing:
-1.  **Agent Registry** — Unified fleet management for Microsoft Agent Framework and custom bots.
-2.  **Semantic Policy Engine** — Define governance in plain English (e.g., *"Never mention competitor pricing"*) and enforce it via **Azure OpenAI (GPT-4o)**.
-3.  **Real-time Moderation** — Automatic PII and safety screening via **Azure AI Content Safety**.
-4.  **OpsSentinel (Agentic DevOps)** — An SRE co-pilot that observes telemetry, reasons over incidents, and proposes automated remediation (GitHub PRs, prompt patches).
-5.  **Audit Trail** — Every action is secured by **Microsoft Entra ID** and recorded in an immutable audit log.
-
----
-
-## 🎬 Demo Script: From Violation to Remediation
-
-Follow this 3-step narrative to experience the full power of AgentOps Agentic DevOps.
-
-### 1. Cause an Incident
-Run the hallucination simulation tool to trigger a semantic policy violation. This simulates a production agent providing inaccurate information contradicted by its grounding context.
-```bash
-npx ts-node tools/test-hallucination.ts
-```
-*   **Console Observation:** A new **"Critical"** incident appears on the Dashboard within seconds.
-*   **Audit Observation:** The `ingest-events` log shows the **CoVe (Chain-of-Verification)** loop detecting the factual contradiction.
-
-### 2. OpsSentinel Reasons
-Wait for the **OpsSentinel** background loop to trigger (or run the trigger tool).
-```bash
-npx ts-node tools/trigger-ops-sentinel.ts
-```
-*   **Console Observation:** Navigate to the Incident Detail page. You will see a **System Generated Comment** from OpsSentinel.
-*   **The Reasoning:** *"OpsSentinel Investigation Result: The agent is hallucinating factual claims about geographic data. Root Cause: System prompt lacks strict groundedness constraints."*
-
-### 3. Autonomous Action
-Observe the automated remediation steps taken by the co-pilot.
-*   **GitHub Action:** Check your configured GitHub repository. A **New Pull Request** has been opened with a suggested prompt engineering patch to fix the hallucination.
-*   **Quarantine (Optional):** If the violation was flagged as a safety risk, the **Azure AI Foundry** deployment traffic is automatically set to 0%, preventing further user exposure.
+1. **Standalone Inference Gateway (`/api/inference`)** — A secure proxy that wraps LLM calls, evaluating input/output compliance in real-time.
+2. **Stateful Enunciation Steering ("Aigement")** — The gateway inspects active session history (`session_id`). If previous completions generated policy warnings, it adaptively shifts the agent's enunciation parameters (injecting stricter system prompts, locking temperature to `0.0`, or blocking prompt injections).
+3. **QMS Playground Console** — An interactive playground to select agents, generate session IDs, test queries, and observe the live audit trace timeline.
+4. **Local-First, Deployable-Ready Architecture** — Runs completely in-process during local development via a custom Vite dev server middleware (zero-config, zero extra processes), while remaining 100% Vercel Serverless Function compatible for deployment.
+5. **Observability Telemetry Ledger** — Measures and displays average latency (ms), token usage, estimated costs (USD), and enunciation status on a rich dashboard.
 
 ---
 
 ## 🛠️ Architecture
 
-AgentOps is built to mirror Microsoft's enterprise guidance for AI governance at scale:
+AgentOps bridges the gap between human intention (prompts) and machinic execution:
 
-- **Identity:** Microsoft Entra ID (MSAL integration).
-- **Compute:** Azure Functions v4 (Node.js/TS) on Flex Consumption.
-- **Data:** Azure SQL Database with **Row-Level Security (RLS)** for strict multi-tenant isolation.
-- **AI Core:** Azure OpenAI (GPT-4o) & Azure AI Content Safety.
-- **Observability:** Azure Monitor / Application Insights.
-
----
-
-## 📖 Documentation
-
-| Document | Description |
-|---|---|
-| [`docs/architecture.md`](docs/architecture.md) | System diagram, Azure flow, and OpsSentinel loop. |
-| [`docs/security-model.md`](docs/security-model.md) | Entra ID RBAC and Azure SQL RLS implementation. |
-| [`docs/agentic-devops.md`](docs/agentic-devops.md) | Deep dive into the OpsSentinel SRE co-pilot. |
-| [`docs/rai-governance.md`](docs/rai-governance.md) | Responsible AI and Transparency Report. |
-| [`docs/impact-statement.md`](docs/impact-statement.md) | Quantified enterprise ROI and risk mitigation. |
-| [`docs/api-reference.md`](docs/api-reference.md) | `ingest-events` API with support for Agent Framework. |
+- **Frontend Console:** React + TypeScript + Tailwind CSS, built with Vite.
+- **Backend API Gateway:** Vercel-compatible Serverless Functions (`api/inference.ts` and `api/ingest-events.ts`) served locally via Vite SSR module loaders.
+- **Database Ledger:** Supabase (PostgreSQL) for storing workspaces, agents, policy configurations, session events, violations, and audit logs.
+- **AI Core:** OpenAI GPT-4o / GPT-4o-mini (falls back to a high-fidelity local mock simulator if API keys are not present).
 
 ---
 
-## 🏗️ Getting Started (Developer Guide)
+## 🎬 Local Verification Script: Stateful Aigement Steering
+
+Verify stateful steering locally in just two steps:
+
+### 1. Start the local server
+Run the development environment. The custom Vite middleware will boot and serve both the React client and the backend `/api/*` serverless routes.
+```bash
+npm run dev
+```
+
+### 2. Run the automated test script
+In a separate terminal, execute the Aigement verification script:
+```bash
+npx ts-node tools/test-aigement.ts
+```
+- **Execution flow:**
+  1. The script automatically registers a test agent, binds a governance policy, and provisions an API key in your Supabase DB.
+  2. It fires a query requesting PII (triggering a post-inference warning flag).
+  3. It fires a second normal query in the same session.
+  4. The gateway detects the warning history, applies **Aigement Steering** (forcing a deterministic temperature of `0.0` and injecting QMS compliance directives), and logs the entire transaction block to `audit_logs`.
+
+---
+
+## 🏗️ Getting Started
 
 ### Prerequisites
 - Node.js ≥ 20
-- Azure Subscription (for AI Services & SQL)
-- Azure CLI & Bicep
-
-### Infrastructure Provisioning
-```bash
-az deployment group create --resource-group <rg-name> --template-file infra/main.bicep
-```
+- Supabase account & credentials in `.env`
 
 ### Local Development
-1. `npm install`
-2. Configure `.env` with your Azure resource endpoints.
-3. `npm run dev`
+1. Clone the repository and install dependencies:
+   ```bash
+   npm install --legacy-peer-deps
+   ```
+2. Configure `.env` with your Supabase credentials:
+   ```env
+   VITE_SUPABASE_PROJECT_ID="your-project-id"
+   VITE_SUPABASE_PUBLISHABLE_KEY="your-pub-key"
+   VITE_SUPABASE_URL="https://your-project.supabase.co"
+   # Optional: add your OpenAI key to enable live model queries
+   OPENAI_API_KEY="sk-..."
+   ```
+3. Boot the environment:
+   ```bash
+   npm run dev
+   ```
+4. Access the QMS Steering Playground at `http://localhost:8080/playground` to chat with agents and inspect the live enunciation trace timeline.
 
 ---
 
-Built for **AI Dev Days Hackathon 2026** by the AgentOps Team.
+Built with ❤️ for standalone agent governance.

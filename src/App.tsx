@@ -22,6 +22,7 @@ import Policies from "./pages/Policies";
 import PolicyDetail from "./pages/PolicyDetail";
 import AuditLog from "./pages/AuditLog";
 import SettingsPage from "./pages/SettingsPage";
+import Playground from "./pages/Playground";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -56,6 +57,7 @@ const App = () => (
                 <Route path="/policies" element={<Policies />} />
                 <Route path="/policies/:id" element={<PolicyDetail />} />
                 <Route path="/audit-log" element={<AuditLog />} />
+                <Route path="/playground" element={<Playground />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Route>
               <Route path="*" element={<NotFound />} />
