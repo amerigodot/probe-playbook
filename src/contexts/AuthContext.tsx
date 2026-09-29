@@ -15,8 +15,9 @@
  */
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { User, Session } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+import { Session } from "@supabase/supabase-js";
+import { supabase, isDemoMode, resetDemoData } from "@/integrations/supabase/client";
+import { DEMO_USER_ID } from "@/lib/demo-data";
 import { useMsal, useAccount } from "@azure/msal-react";
 import { loginRequest } from "@/lib/msal-config";
 
@@ -32,8 +33,11 @@ interface AuthUser {
 
 interface AuthContextType {
   user: AuthUser | null;
-  session: Session | any | null; // Can be Supabase session or MSAL session
+  session: Session | any | null;
   loading: boolean;
+  isDemoMode: boolean;
+  enterDemoMode: () => void;
+  resetDemoData: () => void;
   signUp: (email: string, password: string, displayName?: string) => Promise<{ error: any }>;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signInWithAzure: () => Promise<void>;
@@ -53,7 +57,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { instance, accounts, inProgress } = useMsal();
   const account = useAccount(accounts[0] || {});
 
+  const setDemoUser = () => {
+    setUser({
+      id: DEMO_USER_ID,
+      email: "recruiter.evaluator@enterprise-ai.internal",
+      user_metadata: { display_name: "Lead AI Quality Engineer (Demo Evaluator)" },
+      provider: "supabase",
+    });
+    setSession({
+      provider: "supabase",
+      access_token: "mock_demo_jwt_token_showcase",
+      user: { id: DEMO_USER_ID, email: "recruiter.evaluator@enterprise-ai.internal" }
+    });
+    setLoading(false);
+  };
+
   useEffect(() => {
+    // If in Showcase/Demo mode, automatically authenticate guest session
+    if (isDemoMode) {
+      setDemoUser();
+      return;
+    }
+
     // Check if we have an Azure session
     if (account) {
       setUser({
@@ -68,7 +93,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // Otherwise, check Supabase
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
       setSession(session);
       if (session?.user) {
         setUser({
@@ -83,7 +108,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
     });
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }: any) => {
       setSession(session);
       if (session?.user) {
         setUser({
@@ -99,7 +124,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => subscription.unsubscribe();
   }, [account]);
 
+  const enterDemoMode = () => {
+    setDemoUser();
+  };
+
   const signUp = async (email: string, password: string, displayName?: string) => {
+    if (isDemoMode) {
+      setDemoUser();
+      return { error: null };
+    }
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -112,11 +145,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signIn = async (email: string, password: string) => {
+    if (isDemoMode) {
+      setDemoUser();
+      return { error: null };
+    }
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     return { error };
   };
 
   const signInWithAzure = async () => {
+    if (isDemoMode) {
+      setDemoUser();
+      return;
+    }
     try {
       await instance.loginPopup(loginRequest);
     } catch (error) {
@@ -151,9 +192,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       user, 
       session, 
       loading: loading || inProgress !== "none", 
+      isDemoMode,
+      enterDemoMode,
+      resetDemoData,
       signUp, 
       signIn, 
-      signInWithAzure,
+      signInWithAzure, 
       signOut, 
       resetPassword, 
       updatePassword 

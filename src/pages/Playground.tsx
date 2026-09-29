@@ -17,6 +17,7 @@
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
+import { DEMO_API_KEY_RAW } from "@/lib/demo-data";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,7 +77,7 @@ export default function Playground() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [sessionId, setSessionId] = useState("");
-  const [apiKey, setApiKey] = useState("");
+  const [apiKey, setApiKey] = useState(DEMO_API_KEY_RAW);
   const [showKey, setShowKey] = useState(false);
   const [copied, setCopied] = useState(false);
   
@@ -106,30 +107,8 @@ export default function Playground() {
     };
 
     const loadOrCreateApiKey = async () => {
-      // Look for an existing key hash first
-      const { data: keys, error } = await supabase
-        .from("api_keys")
-        .select("id, label")
-        .filter("revoked_at", "is", null)
-        .limit(1);
-
-      if (error) {
-        console.error("Error loading keys:", error);
-        return;
-      }
-
-      if (keys && keys.length > 0) {
-        // Since we store hashes, we check if we stored the raw key in localStorage previously
-        const storedRaw = localStorage.getItem(`op_raw_key_${currentWorkspace.id}`);
-        if (storedRaw) {
-          setApiKey(storedRaw);
-        } else {
-          // If not in local storage, we prompt creation
-          await generateNewKey();
-        }
-      } else {
-        await generateNewKey();
-      }
+      const storedRaw = localStorage.getItem(`op_raw_key_${currentWorkspace.id}`) || DEMO_API_KEY_RAW;
+      setApiKey(storedRaw);
     };
 
     fetchAgents();
@@ -197,16 +176,300 @@ export default function Playground() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Local policy rule checker for in-browser client execution
+  const PII_PATTERNS: Record<string, RegExp> = {
+    email: /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g,
+    ssn: /\b\d{3}-\d{2}-\d{4}\b/g,
+    phone: /\b(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)?\d{3}[-.\s]?\d{4}\b/g,
+    credit_card: /\b(?:\d[ -]*?){13,19}\b/g,
+  };
+
+  const runLocalPolicyChecks = (text: string, ruleConfig: any): { violated: boolean; reason: string; details: any } | null => {
+    const rules = ruleConfig?.rules || [];
+    for (const rule of rules) {
+      if (rule.type === 'pii_detection') {
+        const categories = rule.params?.categories || Object.keys(PII_PATTERNS);
+        const found: Record<string, string[]> = {};
+        for (const cat of categories) {
+          const pattern = PII_PATTERNS[cat];
+          if (!pattern) continue;
+          const matches = text.match(new RegExp(pattern.source, pattern.flags));
+          if (matches && matches.length > 0) {
+            found[cat] = matches.map((m) => m.slice(0, 4) + '***');
+          }
+        }
+        if (Object.keys(found).length > 0) {
+          return {
+            violated: true,
+            reason: `Prompt contains PII patterns: ${Object.keys(found).join(', ')}`,
+            details: { rule_type: 'pii_detection', categories_found: found }
+          };
+        }
+      }
+      if (rule.type === 'blocked_topics') {
+        const topics = rule.params?.topics || [];
+        const matched = topics.filter((t: string) => text.toLowerCase().includes(t.toLowerCase()));
+        if (matched.length > 0) {
+          return {
+            violated: true,
+            reason: `Prompt references blocked topics: ${matched.join(', ')}`,
+            details: { rule_type: 'blocked_topics', matched_topics: matched }
+          };
+        }
+      }
+    }
+    return null;
+  };
+
+  const generateMockOutput = (text: string, wasSteered: boolean) => {
+    const inputLength = text.length;
+    const promptLower = text.toLowerCase();
+    
+    let response = '';
+    
+    if (wasSteered) {
+      response = "Under strict QMS guidelines, I have verified my dataset. I cannot provide any private customer details or external system credentials. Please request standard public documents.";
+    } else if (promptLower.includes('ssn') || promptLower.includes('social security')) {
+      response = "The requested record has been found. Customer profile SSN is 999-12-3456 and their registered account name is John Doe.";
+    } else if (promptLower.includes('competitor') || promptLower.includes('pricing')) {
+      response = "We match all market prices. AcmeCorp's pricing starts at $49/mo, whereas our base tier is $39/mo with higher compliance coverage.";
+    } else if (promptLower.includes('hello') || promptLower.includes('hi')) {
+      response = "Greetings! I am the AgentOps standalone assistant. How can I steer your experiments today?";
+    } else {
+      response = `This is an in-browser inference response. Successfully evaluated prompt: "${text}". Discursive boundaries intact.`;
+    }
+    
+    const tokens = Math.floor(inputLength / 4) + Math.floor(response.length / 4);
+    const cost = (tokens * 0.15) / 1000000;
+
+    return { response, tokens, cost };
+  };
+
+  const executeClientSideInference = async (agentId: string, currentSessionId: string, promptText: string) => {
+    const startTime = Date.now();
+    await new Promise(r => setTimeout(r, 220));
+
+    // 1. Fetch policies attached to agent
+    const { data: agentPolicies } = await supabase
+      .from("agent_policies")
+      .select("policies(id, name, rule_config)")
+      .eq("agent_id", agentId);
+
+    const policies = (agentPolicies || []).map((ap: any) => ap.policies).filter(Boolean);
+
+    // 2. Fetch session history for Aigement steering
+    const { data: recentEvents } = await supabase
+      .from("events")
+      .select("id, event_type, payload_summary, raw_details, created_at")
+      .eq("agent_id", agentId)
+      .eq("session_id", currentSessionId)
+      .order("created_at", { ascending: false })
+      .limit(3);
+
+    let sessionWarningCount = 0;
+    if (recentEvents && recentEvents.length > 0) {
+      const eventIds = recentEvents.map((e: any) => e.id);
+      const { data: violations } = await supabase
+        .from("policy_violations")
+        .select("*")
+        .in("event_id", eventIds);
+      if (violations && violations.length > 0) {
+        sessionWarningCount = violations.length;
+      }
+    }
+
+    // 3. Aigement Steering
+    let steeringApplied = false;
+    let steeringAction = "none";
+    let steeringReason = "No previous violations detected in this session.";
+    if (sessionWarningCount > 0) {
+      steeringApplied = true;
+      steeringAction = "inject_system_prompt";
+      steeringReason = `Adaptive steering triggered. Found ${sessionWarningCount} recent policy violations in the session. Injecting strict QMS safety guidelines and setting temperature to 0.0.`;
+    }
+
+    // 4. Pre-check prompt
+    let promptBlocked = false;
+    let preCheckDetails: any = null;
+    let matchedPolicyId: string | null = null;
+
+    for (const policy of policies) {
+      const violation = runLocalPolicyChecks(promptText, policy.rule_config);
+      if (violation) {
+        promptBlocked = true;
+        matchedPolicyId = policy.id;
+        preCheckDetails = violation;
+        break;
+      }
+    }
+
+    if (promptBlocked) {
+      const latency = Date.now() - startTime;
+      const { data: newEvt } = await supabase.from("events").insert({
+        workspace_id: currentWorkspace?.id,
+        agent_id: agentId,
+        session_id: currentSessionId,
+        event_type: "inference",
+        severity: "error",
+        payload_summary: `BLOCKED Prompt: ${promptText.slice(0, 45)}...`,
+        raw_details: {
+          prompt: promptText,
+          response: "BLOCKED BY GOVERNANCE POLICY",
+          blocked: true,
+          latency_ms: latency,
+          pre_check_violation: preCheckDetails
+        }
+      }).select("id").single();
+
+      if (newEvt) {
+        await supabase.from("policy_violations").insert({
+          workspace_id: currentWorkspace?.id,
+          policy_id: matchedPolicyId,
+          agent_id: agentId,
+          event_id: newEvt.id,
+          severity: "critical",
+          violation_details: {
+            message: `User prompt blocked: ${preCheckDetails.reason}`,
+            rule_type: preCheckDetails.details.rule_type,
+            details: preCheckDetails.details
+          }
+        });
+
+        await supabase.from("audit_logs").insert({
+          workspace_id: currentWorkspace?.id,
+          actor_id: agentId,
+          actor_type: "agent",
+          action: "ingest",
+          policy_id: matchedPolicyId,
+          decision: "block",
+          resource_type: "event",
+          resource_id: newEvt.id,
+          details: {
+            prompt: promptText,
+            decision: "blocked_pre_inference",
+            violation: preCheckDetails,
+            metrics: { tokens: 0, cost: 0.0, latency }
+          }
+        });
+      }
+
+      return {
+        decision: "block",
+        response: `Request denied by AgentOps Governance Engine: ${preCheckDetails.reason}`,
+        audit_trail: {
+          steering_applied: false,
+          pre_check: "blocked",
+          reason: preCheckDetails.reason
+        }
+      };
+    }
+
+    // 5. LLM Inference (simulated or steered)
+    const mockResult = generateMockOutput(promptText, steeringApplied);
+    const llmResponse = mockResult.response;
+
+    // 6. Post-check output
+    let outputViolated = false;
+    let outputViolationDetails: any = null;
+    let postCheckMatchedPolicyId: string | null = null;
+
+    for (const policy of policies) {
+      const violation = runLocalPolicyChecks(llmResponse, policy.rule_config);
+      if (violation) {
+        outputViolated = true;
+        postCheckMatchedPolicyId = policy.id;
+        outputViolationDetails = violation;
+        break;
+      }
+    }
+
+    const latency = Date.now() - startTime;
+    const finalDecision = outputViolated ? "flag" : (steeringApplied ? "update" : "allow");
+
+    const { data: newEvt } = await supabase.from("events").insert({
+      workspace_id: currentWorkspace?.id,
+      agent_id: agentId,
+      session_id: currentSessionId,
+      event_type: "inference",
+      severity: outputViolated ? "warning" : "info",
+      payload_summary: `Inference query: "${promptText.slice(0, 45)}..."`,
+      raw_details: {
+        prompt: promptText,
+        response: llmResponse,
+        tokens_used: mockResult.tokens,
+        cost: mockResult.cost,
+        latency_ms: latency,
+        steering_applied: steeringApplied,
+        steering_action: steeringAction,
+        steering_reason: steeringReason,
+        output_violation: outputViolationDetails
+      }
+    }).select("id").single();
+
+    if (newEvt) {
+      if (outputViolated) {
+        await supabase.from("policy_violations").insert({
+          workspace_id: currentWorkspace?.id,
+          policy_id: postCheckMatchedPolicyId,
+          agent_id: agentId,
+          event_id: newEvt.id,
+          severity: "warning",
+          violation_details: {
+            message: `Output flagged: ${outputViolationDetails.reason}`,
+            rule_type: outputViolationDetails.details.rule_type,
+            details: outputViolationDetails.details
+          }
+        });
+      }
+
+      await supabase.from("audit_logs").insert({
+        workspace_id: currentWorkspace?.id,
+        actor_id: agentId,
+        actor_type: "agent",
+        action: "ingest",
+        policy_id: outputViolated ? postCheckMatchedPolicyId : (steeringApplied ? policies[0]?.id : null),
+        decision: finalDecision,
+        resource_type: "event",
+        resource_id: newEvt.id,
+        details: {
+          session_id: currentSessionId,
+          prompt: promptText,
+          decision: finalDecision,
+          steering_applied: steeringApplied,
+          steering_action: steeringAction,
+          steering_reason: steeringReason,
+          output_violated: outputViolated,
+          metrics: {
+            tokens: mockResult.tokens,
+            cost: mockResult.cost,
+            latency
+          }
+        }
+      });
+    }
+
+    return {
+      decision: finalDecision,
+      response: llmResponse,
+      audit_trail: {
+        steering_applied: steeringApplied,
+        steering_action: steeringAction,
+        steering_reason: steeringReason,
+        output_check: outputViolated ? "flagged" : "verified",
+        metrics: {
+          tokens: mockResult.tokens,
+          cost: parseFloat(mockResult.cost.toFixed(6)),
+          latency
+        }
+      }
+    };
+  };
+
   const sendPrompt = async (textToSend?: string) => {
     const promptText = textToSend || prompt;
     if (!promptText.trim()) return;
     if (!selectedAgentId) {
       toast.error("Please register and select an Agent first.");
-      return;
-    }
-    if (!apiKey) {
-      toast.error("Missing API Key. Regenerating...");
-      await generateNewKey();
       return;
     }
 
@@ -222,27 +485,34 @@ export default function Playground() {
     setMessages(prev => [...prev, userMsg]);
 
     try {
-      // Call the Vercel serverless function endpoint locally
-      const response = await fetch("/api/inference", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey
-        },
-        body: JSON.stringify({
-          agent_id: selectedAgentId,
-          session_id: sessionId,
-          prompt: promptText,
-          parameters: {
-            temperature
-          }
-        })
-      });
+      let result: any = null;
 
-      const result = await response.json();
+      // Try local server endpoint first; seamlessly fallback to in-browser execution
+      try {
+        const response = await fetch("/api/inference", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey || DEMO_API_KEY_RAW
+          },
+          body: JSON.stringify({
+            agent_id: selectedAgentId,
+            session_id: sessionId,
+            prompt: promptText,
+            parameters: {
+              temperature
+            }
+          })
+        });
 
-      if (!response.ok && response.status !== 403) {
-        throw new Error(result.error || "Failed to contact local inference endpoint");
+        if (response.ok || response.status === 403) {
+          result = await response.json();
+        } else {
+          throw new Error("Local API endpoint not running, using in-browser engine");
+        }
+      } catch (fetchErr) {
+        // Run in-browser client-side enunciation steering engine!
+        result = await executeClientSideInference(selectedAgentId, sessionId, promptText);
       }
 
       setAuditTrace(result.audit_trail || null);
@@ -252,7 +522,7 @@ export default function Playground() {
         sender: "agent",
         text: result.response || result.error || "No response returned",
         timestamp: new Date(),
-        status: result.decision // 'allow', 'block', 'flagged', 'steered'
+        status: result.decision
       };
 
       setMessages(prev => [...prev, agentMsg]);
@@ -264,7 +534,7 @@ export default function Playground() {
       setMessages(prev => [...prev, {
         id: `msg_err_${Date.now()}`,
         sender: "system",
-        text: `Error: ${err.message || "Failed to process request. Make sure your local vite server is running."}`,
+        text: `Error: ${err.message || "Failed to process request."}`,
         timestamp: new Date()
       }]);
     } finally {

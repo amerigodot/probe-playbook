@@ -26,14 +26,15 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { ChevronDown, LogOut, User, Building2 } from "lucide-react";
+import { ChevronDown, LogOut, User, Building2, RotateCcw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 export function TopBar() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, isDemoMode, resetDemoData } = useAuth();
   const { workspaces, currentWorkspace, setCurrentWorkspace } = useWorkspace();
 
-  const initials = user?.email?.slice(0, 2).toUpperCase() ?? "??";
+  const initials = user?.email?.slice(0, 2).toUpperCase() ?? "ED";
 
   return (
     <header className="h-14 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-between px-4">
@@ -65,6 +66,25 @@ export function TopBar() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+        )}
+
+        {isDemoMode && (
+          <div className="hidden sm:flex items-center gap-2 pl-2">
+            <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[11px] font-mono flex items-center gap-1 py-0.5">
+              <Sparkles className="h-3 w-3 text-primary animate-pulse" />
+              Portfolio Showcase Demo
+            </Badge>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={resetDemoData}
+              title="Reset in-browser storage to initial demo state"
+              className="h-7 px-2 text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1"
+            >
+              <RotateCcw className="h-3 w-3" />
+              Reset Demo Data
+            </Button>
+          </div>
         )}
       </div>
 

@@ -26,7 +26,7 @@ import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
 
 export default function Login() {
-  const { user, signIn, signInWithAzure, loading } = useAuth();
+  const { user, signIn, signInWithAzure, enterDemoMode, loading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -68,17 +68,25 @@ export default function Login() {
         </CardHeader>
         <CardContent className="space-y-4 pb-4">
           <Button 
+            className="w-full font-semibold shadow-lg shadow-primary/20 bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center gap-2"
+            onClick={enterDemoMode}
+          >
+            <Zap className="h-4 w-4" />
+            Launch 1-Click Portfolio Demo (No Login)
+          </Button>
+
+          <Button 
             variant="outline" 
-            className="w-full flex items-center justify-center gap-2 border-primary/20 hover:bg-primary/5" 
+            className="w-full flex items-center justify-center gap-2 border-border hover:bg-muted/50 text-xs" 
             onClick={handleAzureLogin}
           >
-            <ShieldCheck className="h-4 w-4 text-blue-600" />
+            <ShieldCheck className="h-4 w-4 text-blue-500" />
             Sign in with Azure AD (Entra ID)
           </Button>
           
-          <div className="relative flex items-center py-2">
+          <div className="relative flex items-center py-1">
             <Separator className="flex-grow" />
-            <span className="mx-2 text-xs text-muted-foreground uppercase">or</span>
+            <span className="mx-2 text-[10px] text-muted-foreground uppercase">or email</span>
             <Separator className="flex-grow" />
           </div>
 
