@@ -41,21 +41,27 @@ export interface DemoStoreData {
   api_keys: any[];
 }
 
-class MockStore {
+export class MockStore {
   private data: DemoStoreData;
 
   constructor() {
     this.data = this.loadFromStorage();
   }
 
+  private hasStorage(): boolean {
+    return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+  }
+
   private loadFromStorage(): DemoStoreData {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        return JSON.parse(stored);
+    if (this.hasStorage()) {
+      try {
+        const stored = window.localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          return JSON.parse(stored);
+        }
+      } catch (e) {
+        console.warn("Failed to parse demo data from localStorage, resetting...", e);
       }
-    } catch (e) {
-      console.warn("Failed to parse demo data from localStorage, resetting...", e);
     }
     const initial = getInitialDemoData();
     this.saveToStorage(initial);
@@ -63,12 +69,14 @@ class MockStore {
   }
 
   private saveToStorage(data: DemoStoreData) {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-      // Also cache demo API key so Playground loads it automatically
-      localStorage.setItem(`op_raw_key_${DEMO_WORKSPACE_ID}`, DEMO_API_KEY_RAW);
-    } catch (e) {
-      console.warn("Failed to persist demo data to localStorage", e);
+    if (this.hasStorage()) {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        // Also cache demo API key so Playground loads it automatically
+        window.localStorage.setItem(`op_raw_key_${DEMO_WORKSPACE_ID}`, DEMO_API_KEY_RAW);
+      } catch (e) {
+        console.warn("Failed to persist demo data to localStorage", e);
+      }
     }
   }
 
@@ -81,11 +89,13 @@ class MockStore {
     this.saveToStorage(this.data);
   }
 
-  public reset() {
+  public reset(reload: boolean = false) {
     const initial = getInitialDemoData();
     this.data = initial;
     this.saveToStorage(initial);
-    window.location.reload();
+    if (reload && typeof window !== 'undefined' && window.location) {
+      window.location.reload();
+    }
   }
 }
 
@@ -388,7 +398,14 @@ export function createMockSupabaseClient() {
 
       if (fnName === "validate_api_key") {
         const keys = mockStoreInstance.getTable("api_keys");
-        const found = keys.find((k) => k.key_hash === args._key_hash && !k.revoked_at);
+        const keyHash = args?._key_hash || args?.key_hash;
+        const rawKey = args?.api_key;
+        const found = keys.find(
+          (k) =>
+            !k.revoked_at &&
+            (k.key_hash === keyHash ||
+             (rawKey && (rawKey === DEMO_API_KEY_RAW || k.key_hash.includes(rawKey))))
+        );
         return { data: found ? found.workspace_id : null, error: null };
       }
 
