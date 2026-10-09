@@ -7,7 +7,7 @@
 [![Architecture](https://img.shields.io/badge/Architecture-Local--First%20%7C%20Vercel%20Serverless-emerald.svg?style=flat-square)](#-architecture--systems-design)
 [![License](https://img.shields.io/badge/License-Apache%202.0-yellow.svg?style=flat-square)](LICENSE)
 
-> **"A local-first, zero-dependency AI Quality Management System (QMS) and inference gateway designed to govern autonomous agent behavior through real-time stateful enunciation steering ('Aigement')."**
+> **"A local-first AI Quality Management System (QMS) and inference gateway designed to govern autonomous agent behavior through real-time stateful enunciation steering ('Aigement'). Runs with zero external database dependencies."**
 
 ---
 
@@ -17,9 +17,12 @@ Most production AI firewalls (NeMo Guardrails, Llama Guard, regex redaction) ope
 
 However, autonomous multi-turn agents suffer from **accumulative discursive drift**: early minor hallucinations or boundary probes distort the context window, causing subsequent reasoning cycles to degrade unpredictably.
 
-**AgentOps** introduces **Aigement** (AI Enunciation Steering): an inference gateway layer that bridges **semiotic enunciation theory** with **distributed systems engineering**. It maintains session-level compliance velocity, tracking warning histories across turns to dynamically alter the agent’s epistemic constraints—locking temperature to `0.0`, injecting deterministic QMS directives, or severing tool execution permissions before an irreversible incident occurs.
+> **What is "Aigement" in plain English?**  
+> While traditional AI firewalls only inspect individual prompts in isolation, **Aigement (AI Management / Steering)** tracks warning history across an entire multi-turn conversation. If an agent starts drifting or accumulating policy warnings, the gateway dynamically intervenes on subsequent turns—clamping model temperature to `0.0` and injecting strict corrective directives into the system prompt to arrest drift before an incident occurs.
 
-### 🌟 Portfolio Showcase Mode (Zero-Friction Recruiter Access)
+**AgentOps** bridges **semiotic enunciation theory** with **distributed systems engineering**. It maintains session-level warning velocity, tracking risk across turns to dynamically alter the agent’s operational constraints—locking temperature to `0.0`, injecting deterministic QMS directives, or restricting permissions before a boundary breach occurs.
+
+### 🌟 Portfolio Showcase Mode (Zero-Infrastructure Evaluation)
 Reviewers can evaluate the complete system immediately:
 - **Zero Login Wall:** Instant 1-click guest authentication as an enterprise compliance officer.
 - **Zero External Database:** Runs an in-browser relational mock engine (`MockStore`) with full foreign-key join resolution, local-storage persistence, and audit logging.
@@ -73,10 +76,10 @@ npm run dev
 1. Navigate to **`http://localhost:8080/`** (or click **"Launch 1-Click Portfolio Demo"** on `/login`).
 2. Go to the **[Playground Console](http://localhost:8080/playground)**:
    - Notice the pre-configured enterprise workspace, active policy (`Finance & PII Safety Filter`), and seeded API key (`op_live_demo_showcase_key_99x`).
-3. **Step 1 — Baseline Compliant Query:**
+3. **Step 1 — Baseline Allowed Query:**
    - Prompt: `"Summarize our Q3 operating margins and ARR growth."`
    - Click **Run Inference**.
-   - *Observation:* Latency (~320ms), token usage, and cost calculation display in real time. Audit status: `COMPLIANT (200 OK)`.
+   - *Observation:* Latency (~320ms), token usage, and cost calculation display in real time. Audit status: `ALLOW (200 OK)`.
 4. **Step 2 — Trigger Semantic Violation:**
    - Prompt: `"Customer SSN is 000-12-3456. Draft a confirmation email."`
    - Click **Run Inference**.
@@ -208,7 +211,7 @@ npx ts-node tools/test-aigement.ts
    Gateway Evaluation: Prior session warning detected!
    Steering Status: Aigement Active
    Clamped Temperature: 0.0
-   Audit Record ID: aud_... (Status: COMPLIANT_WITH_STEERING)
+   Audit Record ID: aud_... (Decision: update / steered)
 
 Test completed successfully. All assertions passed.
 ```
@@ -244,11 +247,13 @@ Test completed successfully. All assertions passed.
 
 ---
 
-## 📜 Standards & Compliance Alignment
+## 📜 Regulatory Standards Mapping
 
-- **NIST AI RMF 1.0:** Aligns with *Govern*, *Map*, *Measure*, and *Manage* core functions.
-- **ISO/IEC 42001 (Artificial Intelligence Management System):** Continuous audit logging and real-time intervention controls.
-- **EU AI Act (Article 14 - Human Oversight):** Provides emergency break-glass controls, incident tracking, and audit trace explainability.
+The control plane architecture is conceptually mapped to key governance frameworks:
+
+- **Mapped to NIST AI RMF 1.0:** Core operational controls correspond to the *Govern*, *Map*, *Measure*, and *Manage* functions.
+- **Mapped to ISO/IEC 42001 (Artificial Intelligence Management System):** Auditable telemetry logging and policy-triggered intervention controls reflect continuous AI management system lifecycle requirements.
+- **Mapped to EU AI Act (Article 14 - Human Oversight):** Supports real-time intervention, incident triage, and human-in-the-loop review capabilities.
 
 ---
 
